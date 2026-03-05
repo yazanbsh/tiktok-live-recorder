@@ -171,7 +171,7 @@ def _make_config(username: str, entry: dict, mode: Mode) -> RecorderConfig:
         automatic_interval=entry.get("interval", 5),
         cookies=_get_cookies(),
         proxy=entry.get("proxy"),
-        output=str(entry.get("output") or RECORDINGS_DIR),
+        output=str(entry.get("output") or RECORDINGS_DIR / username),
         duration=entry.get("duration"),
         bitrate=entry.get("bitrate"),
     )
@@ -435,10 +435,13 @@ def check_live_status(username: str):
 def list_recordings():
     files = []
     for ext in ("*.mp4", "*.flv"):
-        for f in RECORDINGS_DIR.glob(ext):
+        for f in RECORDINGS_DIR.rglob(ext):
             stat = f.stat()
+            # parent dir name = username (e.g. /data/recordings/flomtv/file.mp4)
+            username = f.parent.name if f.parent != RECORDINGS_DIR else "unknown"
             files.append({
                 "filename":   f.name,
+                "username":   username,
                 "size_mb":    round(stat.st_size / 1024 / 1024, 2),
                 "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
                 "path":       str(f),

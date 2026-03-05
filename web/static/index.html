@@ -667,14 +667,15 @@
                 <th>User</th>
                 <th>Status</th>
                 <th>Mode</th>
-                <th>Last Live</th>
+                <th>TikTok Live</th>
+                <th>Last Seen Live</th>
                 <th>Recordings</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody id="watchlist-tbody">
               <tr>
-                <td colspan="6">
+                <td colspan="7">
                   <div class="empty-state">
                     <div class="empty-icon">◉</div>
                     <div class="empty-text">Loading watchlist...</div>
@@ -826,7 +827,7 @@ async function loadWatchlist() {
   try {
     const users = await apiFetch('/api/users');
     if (!users.length) {
-      tbody.innerHTML = `<tr><td colspan="6">
+      tbody.innerHTML = `<tr><td colspan="7">
         <div class="empty-state">
           <div class="empty-icon">◉</div>
           <div class="empty-text">No users in watchlist yet.<br>Click <strong>+ Add User</strong> to start monitoring.</div>
@@ -835,9 +836,17 @@ async function loadWatchlist() {
     }
     tbody.innerHTML = users.map(renderUserRow).join('');
   } catch(e) {
-    tbody.innerHTML = `<tr><td colspan="6" style="color:var(--accent);font-family:var(--mono);font-size:11px;padding:20px;">
+    tbody.innerHTML = `<tr><td colspan="7" style="color:var(--accent);font-family:var(--mono);font-size:11px;padding:20px;">
       Error loading watchlist: ${e.message}</td></tr>`;
   }
+}
+
+function renderLiveBadge(username) {
+  const s = liveStatus[username];
+  if (s === undefined) return `<span class="badge idle" onclick="recheckLive('${username}')" style="cursor:pointer"><span class="badge-dot"></span>CHECKING</span>`;
+  if (s === 'checking') return `<span class="badge" style="background:rgba(255,214,10,0.1);color:var(--yellow);border:1px solid rgba(255,214,10,0.2);cursor:pointer" onclick="recheckLive('${username}')"><span class="badge-dot" style="background:var(--yellow)"></span>CHECKING</span>`;
+  if (s === true)  return `<span class="badge monitoring" onclick="recheckLive('${username}')" style="cursor:pointer" title="Click to recheck"><span class="badge-dot"></span>LIVE</span>`;
+  return `<span class="badge" style="background:rgba(255,45,85,0.08);color:var(--accent);border:1px solid rgba(255,45,85,0.2);cursor:pointer" onclick="recheckLive('${username}')" title="Click to recheck"><span class="badge-dot" style="background:var(--accent)"></span>OFFLINE</span>`;
 }
 
 function renderUserRow(u) {
@@ -853,18 +862,18 @@ function renderUserRow(u) {
       <div class="username-cell">
         <div class="avatar">${initials}</div>
         <div>
-          <div class="uname"><span class="at">@</span>${u.username}</div>
+          <div class="uname"><a href="https://tiktok.com/@${u.username}" target="_blank" style="color:inherit;text-decoration:none;"><span class="at">@</span>${u.username}</a></div>
           ${u.last_error ? `<div style="font-size:10px;color:var(--accent);font-family:var(--mono);margin-top:2px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${u.last_error}">${u.last_error}</div>` : ''}
         </div>
       </div>
     </td>
     <td>${statusBadge}</td>
     <td>${modeTag}</td>
+    <td>${renderLiveBadge(u.username)}</td>
     <td style="font-size:12px;color:var(--text2)">${lastLive}</td>
     <td style="font-family:var(--mono);font-size:13px">${u.recordings_count || 0}</td>
     <td>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <button class="action-btn primary-btn" onclick="checkLive('${u.username}', this)">⬤ Live?</button>
         ${u.status === 'recording'
           ? `<button class="action-btn" style="border-color:var(--accent);color:var(--accent)" onclick="stopRecording('${u.username}')">■ Stop</button>`
           : u.mode === 'manual' ? `<button class="action-btn primary-btn" onclick="triggerRecord('${u.username}')">▶ Record</button>` : ''
@@ -881,23 +890,37 @@ function renderBadge(status) {
   return `<span class="badge ${cls}"><span class="badge-dot"></span>${labels[cls] || status.toUpperCase()}</span>`;
 }
 
-async function checkLive(username, btn) {
-  btn.textContent = '...';
-  btn.disabled = true;
+// { username: true | false | 'checking' | undefined }
+const liveStatus = {};
+
+async function recheckLive(username) {
+  liveStatus[username] = 'checking';
+  loadWatchlist(); // re-render to show CHECKING state
   try {
     const r = await apiFetch(`/api/users/${username}/status`);
-    if (r.is_live) {
-      toast(`@${username} is <strong>LIVE</strong> right now!`, 'success');
-    } else {
-      toast(`@${username} is not live`, 'info');
-    }
+    liveStatus[username] = r.is_live;
+    if (r.is_live) toast(`@${username} is <strong>LIVE</strong> right now!`, 'success');
   } catch(e) {
-    toast(`Check failed: ${e.message}`, 'error');
-  } finally {
-    btn.textContent = '⬤ Live?';
-    btn.disabled = false;
-    loadWatchlist();
+    liveStatus[username] = false;
   }
+  loadWatchlist();
+}
+
+async function pollLiveStatus() {
+  let users = [];
+  try { users = await apiFetch('/api/users'); } catch(e) { return; }
+  if (!users.length) return;
+  // check all users in parallel
+  await Promise.allSettled(users.map(async u => {
+    liveStatus[u.username] = 'checking';
+    try {
+      const r = await apiFetch(`/api/users/${u.username}/status`);
+      liveStatus[u.username] = r.is_live;
+    } catch(e) {
+      liveStatus[u.username] = false;
+    }
+  }));
+  loadWatchlist();
 }
 
 async function stopRecording(username) {
@@ -993,15 +1016,32 @@ async function loadRecordings() {
       </div>`;
       return;
     }
-    grid.innerHTML = files.map(f => `
-      <div class="rec-card">
-        <div class="rec-filename">${f.filename}</div>
-        <div class="rec-meta">
-          <span>${f.size_mb} MB</span>
-          <span>${new Date(f.created_at).toLocaleDateString()}</span>
-        </div>
-      </div>
-    `).join('');
+    // group by username
+    const groups = {};
+    for (const f of files) {
+      const u = f.username || 'unknown';
+      if (!groups[u]) groups[u] = [];
+      groups[u].push(f);
+    }
+    let html = '';
+    for (const [username, recs] of Object.entries(groups)) {
+      html += `<div style="grid-column:1/-1;margin-top:18px;margin-bottom:6px;">
+        <span style="font-family:var(--mono);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text2)">
+          <span style="color:var(--accent)">@</span>${username}
+          <span style="color:var(--muted);margin-left:8px">${recs.length} clip${recs.length !== 1 ? 's' : ''}</span>
+        </span>
+      </div>`;
+      for (const f of recs) {
+        html += `<div class="rec-card">
+          <div class="rec-filename">${f.filename}</div>
+          <div class="rec-meta">
+            <span>${f.size_mb} MB</span>
+            <span>${new Date(f.created_at).toLocaleDateString()}</span>
+          </div>
+        </div>`;
+      }
+    }
+    grid.innerHTML = html;
   } catch(e) {
     grid.innerHTML = `<div style="color:var(--accent);font-family:var(--mono);font-size:11px;">${e.message}</div>`;
   }
@@ -1042,8 +1082,9 @@ function toast(msg, type = 'info') {
 // ── Init + auto-refresh ───────────────────────────────────────────────────────
 loadWatchlist();
 loadStats();
+pollLiveStatus(); // initial live check on page load
 
-// auto-refresh watchlist every 15 seconds
+// auto-refresh watchlist state every 15 seconds
 setInterval(() => {
   const active = document.querySelector('.panel.active');
   if (active && active.id === 'panel-watchlist') {
@@ -1051,6 +1092,14 @@ setInterval(() => {
     loadStats();
   }
 }, 15000);
+
+// poll TikTok live status every 60 seconds
+setInterval(() => {
+  const active = document.querySelector('.panel.active');
+  if (active && active.id === 'panel-watchlist') {
+    pollLiveStatus();
+  }
+}, 60000);
 </script>
 </body>
 </html>
