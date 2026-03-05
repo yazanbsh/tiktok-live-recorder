@@ -1,0 +1,13 @@
+services:
+  tiktok-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data                                        # all persistent data (watchlist, recordings, logs)
+      - ./src/cookies.json:/app/src/cookies.json:ro        # your TikTok session cookies (read-only)
+    environment:
+      - DATA_DIR=/data
+    restart: unless-stopped

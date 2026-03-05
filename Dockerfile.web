@@ -1,0 +1,60 @@
+# ---- Stage 1: Builder ----
+FROM python:3.13-alpine AS builder
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+RUN apk add --no-cache \
+    gcc \
+    g++ \
+    libffi-dev \
+    musl-dev
+
+WORKDIR /app
+
+# Install dependencies first for better layer caching
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
+
+# Install web UI deps on top
+RUN uv pip install --python .venv/bin/python \
+    fastapi "uvicorn[standard]" python-multipart
+
+# Copy source code and web UI
+COPY src/ ./src/
+COPY web/ ./web/
+
+# ---- Stage 2: Runtime ----
+FROM python:3.13-alpine
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PATH="/app/.venv/bin:$PATH"
+# All persistent data lives here — bind-mount this to the host
+ENV DATA_DIR=/data
+
+RUN apk add --no-cache ffmpeg bash
+
+# Create non-root user
+RUN addgroup -g 1000 appuser && \
+    adduser -u 1000 -G appuser -D appuser
+
+WORKDIR /app
+
+COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /app/src   ./src
+COPY --from=builder /app/web   ./web
+
+# Create /data with correct ownership so the non-root user can write to it
+RUN mkdir -p /data/recordings /data/logs && \
+    chown -R 1000:1000 /app /data
+
+USER 1000:1000
+
+EXPOSE 8888
+
+VOLUME ["/data"]
+
+CMD ["uvicorn", "web.server:app", "--host", "0.0.0.0", "--port", "8888"]
