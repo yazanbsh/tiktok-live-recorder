@@ -4,10 +4,11 @@ services:
       context: .
       dockerfile: Dockerfile.web
     ports:
-      - "8000:8000"
+      - "${WEBUI_PORT:-8000}:${WEBUI_PORT:-8000}"
     volumes:
-      - ./data:/data                                        # all persistent data (watchlist, recordings, logs)
-      - ./src/cookies.json:/app/src/cookies.json:ro        # your TikTok session cookies (read-only)
+      - ./data:/data                                      # all persistent data (watchlist, recordings, logs)
+      - ./src/cookies.json:/app/src/cookies.json:ro      # your TikTok session cookies (read-only)
     environment:
       - DATA_DIR=/data
+      - WEBUI_PORT=${WEBUI_PORT:-8000}
     restart: unless-stopped

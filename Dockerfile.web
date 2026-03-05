@@ -34,6 +34,7 @@ ENV PYTHONUNBUFFERED=1
 ENV PATH="/app/.venv/bin:$PATH"
 # All persistent data lives here — bind-mount this to the host
 ENV DATA_DIR=/data
+ENV WEBUI_PORT=8000
 
 RUN apk add --no-cache ffmpeg bash
 
@@ -43,18 +44,18 @@ RUN addgroup -g 1000 appuser && \
 
 WORKDIR /app
 
-COPY --from=builder /app/.venv /app/.venv
-COPY --from=builder /app/src   ./src
-COPY --from=builder /app/web   ./web
+COPY --from=builder /app/.venv        /app/.venv
+COPY --from=builder /app/src          ./src
+COPY --from=builder /app/web          ./web
+COPY entrypoint.web.sh                ./entrypoint.web.sh
 
 # Create /data with correct ownership so the non-root user can write to it
 RUN mkdir -p /data/recordings /data/logs && \
+    chmod +x /app/entrypoint.web.sh && \
     chown -R 1000:1000 /app /data
 
 USER 1000:1000
 
-EXPOSE 8888
-
 VOLUME ["/data"]
 
-CMD ["uvicorn", "web.server:app", "--host", "0.0.0.0", "--port", "8888"]
+ENTRYPOINT ["/app/entrypoint.web.sh"]
