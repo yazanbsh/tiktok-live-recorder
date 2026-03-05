@@ -30,12 +30,12 @@ from core.tiktok_api import TikTokAPI
 from utils.video_management import VideoManagement
 
 # ── paths ──────────────────────────────────────────────────────────────────────
-BASE_DIR       = Path(__file__).parent
-STATIC_DIR     = BASE_DIR / "static"
-DATA_DIR       = Path(os.environ.get("DATA_DIR", str(BASE_DIR.parent / "data")))
+BASE_DIR = Path(__file__).parent
+STATIC_DIR = BASE_DIR / "static"
+DATA_DIR = Path(os.environ.get("DATA_DIR", str(BASE_DIR.parent / "data")))
 WATCHLIST_FILE = DATA_DIR / "watchlist.json"
 RECORDINGS_DIR = DATA_DIR / "recordings"
-LOG_FILE       = DATA_DIR / "logs" / "tiktok-recorder.log"
+LOG_FILE = DATA_DIR / "logs" / "tiktok-recorder.log"
 
 # ensure all data subdirs exist
 (DATA_DIR / "recordings").mkdir(parents=True, exist_ok=True)
@@ -46,6 +46,7 @@ app = FastAPI(title="TikTok Live Recorder", version="1.0.0")
 # ── in-memory state ────────────────────────────────────────────────────────────
 _state_lock = threading.Lock()
 
+
 def _load_watchlist() -> dict:
     if WATCHLIST_FILE.exists():
         try:
@@ -54,37 +55,42 @@ def _load_watchlist() -> dict:
             pass
     return {}
 
+
 def _save_watchlist(data: dict):
     WATCHLIST_FILE.write_text(json.dumps(data, indent=2))
+
 
 watchlist: dict = _load_watchlist()
 
 # { username -> Thread }  — the outer monitoring/polling loop
-_workers:         dict[str, threading.Thread] = {}
+_workers: dict[str, threading.Thread] = {}
 # { username -> Event }   — set to stop the whole worker (monitoring + recording)
-_stop_events:     dict[str, threading.Event]  = {}
+_stop_events: dict[str, threading.Event] = {}
 # { username -> Event }   — set to stop only the active recording, keep monitoring
-_rec_stop_events: dict[str, threading.Event]  = {}
+_rec_stop_events: dict[str, threading.Event] = {}
 
 
 # ── pydantic models ────────────────────────────────────────────────────────────
 
+
 class AddUserRequest(BaseModel):
-    username:  str
-    mode:      str           = "automatic"
-    interval:  int           = 5
-    proxy:     Optional[str] = None
-    output:    Optional[str] = None
-    duration:  Optional[int] = None
-    bitrate:   Optional[str] = None
+    username: str
+    mode: str = "automatic"
+    interval: int = 5
+    proxy: Optional[str] = None
+    output: Optional[str] = None
+    duration: Optional[int] = None
+    bitrate: Optional[str] = None
+
 
 class UpdateUserRequest(BaseModel):
-    mode:     Optional[str] = None
+    mode: Optional[str] = None
     interval: Optional[int] = None
-    proxy:    Optional[str] = None
+    proxy: Optional[str] = None
 
 
 # ── StoppableTikTokRecorder ────────────────────────────────────────────────────
+
 
 class StoppableTikTokRecorder(TikTokRecorder):
     """
@@ -143,7 +149,9 @@ class StoppableTikTokRecorder(TikTokRecorder):
                     time.sleep(2)
 
                 except Exception as ex:
-                    logger.error(f"Unexpected error during recording: {ex}", exc_info=True)
+                    logger.error(
+                        f"Unexpected error during recording: {ex}", exc_info=True
+                    )
                     stop_recording = True
 
                 finally:
@@ -158,11 +166,13 @@ class StoppableTikTokRecorder(TikTokRecorder):
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
+
 def _get_cookies() -> dict:
     try:
         return read_cookies()
     except Exception:
         return {}
+
 
 def _make_config(username: str, entry: dict, mode: Mode) -> RecorderConfig:
     return RecorderConfig(
@@ -176,15 +186,16 @@ def _make_config(username: str, entry: dict, mode: Mode) -> RecorderConfig:
         bitrate=entry.get("bitrate"),
     )
 
+
 def _recording_worker(username: str, stop_event: threading.Event):
     """
     Background thread: polls TikTok every N minutes, records when live.
     stop_event              → kills the whole worker (user removed / server shutdown)
     _rec_stop_events[user]  → stops only the active recording, loop continues
     """
-    entry    = watchlist.get(username, {})
-    cookies  = _get_cookies()
-    api      = TikTokAPI(proxy=entry.get("proxy"), cookies=cookies)
+    entry = watchlist.get(username, {})
+    cookies = _get_cookies()
+    api = TikTokAPI(proxy=entry.get("proxy"), cookies=cookies)
     interval = entry.get("interval", 5)
 
     while not stop_event.is_set():
@@ -193,7 +204,9 @@ def _recording_worker(username: str, stop_event: threading.Event):
             if room_id and api.is_room_alive(room_id):
                 with _state_lock:
                     if username in watchlist:
-                        watchlist[username]["last_seen_live"] = datetime.utcnow().isoformat()
+                        watchlist[username]["last_seen_live"] = (
+                            datetime.utcnow().isoformat()
+                        )
                         watchlist[username]["status"] = "recording"
                         _save_watchlist(watchlist)
 
@@ -201,7 +214,7 @@ def _recording_worker(username: str, stop_event: threading.Event):
                 rec_stop = threading.Event()
                 _rec_stop_events[username] = rec_stop
 
-                cfg      = _make_config(username, entry, Mode.MANUAL)
+                cfg = _make_config(username, entry, Mode.MANUAL)
                 recorder = StoppableTikTokRecorder(cfg, rec_stop)
 
                 rec_thread = threading.Thread(
@@ -212,7 +225,11 @@ def _recording_worker(username: str, stop_event: threading.Event):
                 rec_thread.start()
 
                 # wait until: stream ends | worker stopped | recording manually stopped
-                while rec_thread.is_alive() and not stop_event.is_set() and not rec_stop.is_set():
+                while (
+                    rec_thread.is_alive()
+                    and not stop_event.is_set()
+                    and not rec_stop.is_set()
+                ):
                     rec_thread.join(timeout=2)
 
                 # if the whole worker is being killed, propagate to recording too
@@ -263,6 +280,7 @@ def _start_worker(username: str):
     t.start()
     _workers[username] = t
 
+
 def _stop_worker(username: str):
     # first stop the active recording if any
     if username in _rec_stop_events:
@@ -286,6 +304,7 @@ async def startup():
 
 # ── API routes ─────────────────────────────────────────────────────────────────
 
+
 @app.get("/api/users")
 def list_users():
     with _state_lock:
@@ -301,17 +320,17 @@ def add_user(req: AddUserRequest):
         if username in watchlist:
             raise HTTPException(409, f"@{username} is already in the watchlist")
         entry = {
-            "username":         username,
-            "mode":             req.mode,
-            "interval":         req.interval,
-            "proxy":            req.proxy,
-            "output":           req.output,
-            "duration":         req.duration,
-            "bitrate":          req.bitrate,
-            "added_at":         datetime.utcnow().isoformat(),
-            "status":           "monitoring" if req.mode == "automatic" else "idle",
-            "last_seen_live":   None,
-            "last_error":       None,
+            "username": username,
+            "mode": req.mode,
+            "interval": req.interval,
+            "proxy": req.proxy,
+            "output": req.output,
+            "duration": req.duration,
+            "bitrate": req.bitrate,
+            "added_at": datetime.utcnow().isoformat(),
+            "status": "monitoring" if req.mode == "automatic" else "idle",
+            "last_seen_live": None,
+            "last_error": None,
             "recordings_count": 0,
         }
         watchlist[username] = entry
@@ -327,7 +346,7 @@ def remove_user(username: str):
     with _state_lock:
         if username not in watchlist:
             raise HTTPException(404, f"@{username} not found")
-    _stop_worker(username)   # stops recording + worker before deleting
+    _stop_worker(username)  # stops recording + worker before deleting
     with _state_lock:
         del watchlist[username]
         _save_watchlist(watchlist)
@@ -341,9 +360,12 @@ def update_user(username: str, req: UpdateUserRequest):
         if username not in watchlist:
             raise HTTPException(404, f"@{username} not found")
         entry = watchlist[username]
-        if req.mode     is not None: entry["mode"]     = req.mode
-        if req.interval is not None: entry["interval"] = req.interval
-        if req.proxy    is not None: entry["proxy"]    = req.proxy
+        if req.mode is not None:
+            entry["mode"] = req.mode
+        if req.interval is not None:
+            entry["interval"] = req.interval
+        if req.proxy is not None:
+            entry["proxy"] = req.proxy
         _save_watchlist(watchlist)
     _stop_worker(username)
     if entry.get("mode") == "automatic":
@@ -370,7 +392,7 @@ def manual_record(username: str, background_tasks: BackgroundTasks):
             with _state_lock:
                 watchlist[username]["status"] = "recording"
                 _save_watchlist(watchlist)
-            cfg      = _make_config(username, entry, Mode.MANUAL)
+            cfg = _make_config(username, entry, Mode.MANUAL)
             recorder = StoppableTikTokRecorder(cfg, rec_stop)
             recorder.run()
         except Exception as e:
@@ -402,7 +424,9 @@ def stop_recording(username: str):
         status = watchlist[username].get("status")
 
     if status != "recording":
-        raise HTTPException(409, f"@{username} is not currently recording (status: {status})")
+        raise HTTPException(
+            409, f"@{username} is not currently recording (status: {status})"
+        )
 
     if username not in _rec_stop_events:
         raise HTTPException(500, "No active recording event found for this user")
@@ -419,7 +443,7 @@ def check_live_status(username: str):
             raise HTTPException(404, f"@{username} not found")
         entry = watchlist[username]
     try:
-        api     = TikTokAPI(proxy=entry.get("proxy"), cookies=_get_cookies())
+        api = TikTokAPI(proxy=entry.get("proxy"), cookies=_get_cookies())
         room_id = api.get_room_id_from_user(username)
         is_live = bool(room_id and api.is_room_alive(room_id))
         if is_live:
@@ -439,13 +463,15 @@ def list_recordings():
             stat = f.stat()
             # parent dir name = username (e.g. /data/recordings/flomtv/file.mp4)
             username = f.parent.name if f.parent != RECORDINGS_DIR else "unknown"
-            files.append({
-                "filename":   f.name,
-                "username":   username,
-                "size_mb":    round(stat.st_size / 1024 / 1024, 2),
-                "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-                "path":       str(f),
-            })
+            files.append(
+                {
+                    "filename": f.name,
+                    "username": username,
+                    "size_mb": round(stat.st_size / 1024 / 1024, 2),
+                    "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+                    "path": str(f),
+                }
+            )
     files.sort(key=lambda x: x["created_at"], reverse=True)
     return files
 
@@ -464,28 +490,33 @@ def get_logs(lines: int = 100):
 @app.get("/api/stats")
 def get_stats():
     with _state_lock:
-        total      = len(watchlist)
-        recording  = sum(1 for e in watchlist.values() if e.get("status") == "recording")
-        monitoring = sum(1 for e in watchlist.values() if e.get("status") == "monitoring")
+        total = len(watchlist)
+        recording = sum(1 for e in watchlist.values() if e.get("status") == "recording")
+        monitoring = sum(
+            1 for e in watchlist.values() if e.get("status") == "monitoring"
+        )
         total_recs = sum(e.get("recordings_count", 0) for e in watchlist.values())
     rec_files = list(RECORDINGS_DIR.glob("*.mp4"))
-    disk_mb   = sum(f.stat().st_size for f in rec_files) / 1024 / 1024
+    disk_mb = sum(f.stat().st_size for f in rec_files) / 1024 / 1024
     return {
-        "total_users":         total,
+        "total_users": total,
         "currently_recording": recording,
-        "monitoring":          monitoring,
-        "total_recordings":    total_recs,
-        "disk_used_mb":        round(disk_mb, 1),
+        "monitoring": monitoring,
+        "total_recordings": total_recs,
+        "disk_used_mb": round(disk_mb, 1),
     }
 
 
 # ── static / frontend ──────────────────────────────────────────────────────────
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+
 @app.get("/")
 def index():
     return FileResponse(str(STATIC_DIR / "index.html"))
 
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
