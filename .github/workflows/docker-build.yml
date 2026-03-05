@@ -1,0 +1,42 @@
+name: Build and Push Docker
+
+on:
+  push:
+    branches:
+      - main
+  workflow_run:
+    workflows: ["Sync Upstream"]
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout the code
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Log in to GitHub Container Registry
+      - name: Log in to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build Web Docker image
+      - name: Build Web Docker image
+        run: |
+          docker build -f Dockerfile.web -t ghcr.io/${{ github.repository_owner }}/tiktok-live-recorder:web .
+
+      # Push Web Docker image
+      - name: Push Web Docker image
+        run: |
+          docker push ghcr.io/${{ github.repository_owner }}/tiktok-live-recorder:web
