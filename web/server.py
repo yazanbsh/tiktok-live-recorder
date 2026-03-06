@@ -511,8 +511,8 @@ def get_stats():
 
 
 @app.get("/api/recordings/{username}/{filename}")
-def download_recording(username: str, filename: str):
-    """Serve a recording file as a download."""
+def download_recording(username: str, filename: str, inline: bool = False):
+    """Serve a recording file. Use ?inline=true for browser playback, default is download."""
     file_path = RECORDINGS_DIR / username / filename
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(404, "File not found")
@@ -521,11 +521,16 @@ def download_recording(username: str, filename: str):
         file_path.relative_to(RECORDINGS_DIR)
     except ValueError:
         raise HTTPException(403, "Access denied")
+    disposition = (
+        f'inline; filename="{filename}"'
+        if inline
+        else f'attachment; filename="{filename}"'
+    )
     return FileResponse(
         path=str(file_path),
         filename=filename,
         media_type="video/mp4",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": disposition},
     )
 
 

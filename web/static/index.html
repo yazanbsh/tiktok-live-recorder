@@ -718,6 +718,63 @@
 
   .checking { color: var(--yellow); font-family: var(--mono); font-size: 10px; }
 </style>
+<link rel="stylesheet" href="https://cdn.plyr.io/3.8.3/plyr.css">
+<style>
+  /* ── PLYR THEME OVERRIDES ─────────────────── */
+  :root { --plyr-color-main: #ff2d55; }
+  .plyr { border-radius: 6px; }
+
+  /* ── VIDEO MODAL ─────────────────────────── */
+  .vid-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    z-index: 500;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .vid-modal-overlay.open { display: flex; }
+  .vid-modal {
+    background: var(--card);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    width: 100%;
+    max-width: 900px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .vid-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .vid-modal-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: calc(100% - 40px);
+  }
+  .vid-modal-close {
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-size: 18px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 4px;
+    flex-shrink: 0;
+  }
+  .vid-modal-close:hover { color: var(--text); }
+  .vid-modal-body { background: #000; }
+</style>
 </head>
 <body>
 
@@ -1323,14 +1380,15 @@ async function loadRecordings() {
             <input type="checkbox" class="rec-checkbox" data-key="${key}" data-user="${username}" ${isSelected ? 'checked' : ''}
               onclick="event.stopPropagation()"
               onchange="toggleFile('${key}', this.checked); updateSectionCheckbox('${username}')">
-            <div class="rec-filename">${f.filename}</div>
+            <a class="rec-filename" href="/api/recordings/${f.username}/${encodeURIComponent(f.filename)}?inline=true"
+              target="_blank" onclick="event.stopPropagation()">${f.filename}</a>
           </div>
           <div class="rec-meta">
             <span>${f.size_mb} MB</span>
             <span>${new Date(f.created_at).toLocaleDateString()}</span>
           </div>
           <div class="rec-actions" onclick="event.stopPropagation()">
-            <button class="rec-btn rec-btn-play" onclick="playInFilebrowser('${f.username}','${f.filename}')">▶ Play</button>
+            <button class="rec-btn rec-btn-play" onclick="openVideoModal('${f.username}','${f.filename}')">▶ Play</button>
             <button class="rec-btn rec-btn-dl"  onclick="singleDownload('${f.username}','${f.filename}')">↓ Download</button>
             <button class="rec-btn rec-btn-del" onclick="singleDelete('${f.username}','${f.filename}')">✕ Delete</button>
           </div>
@@ -1398,6 +1456,67 @@ setInterval(() => {
     pollLiveStatus();
   }
 }, 60000);
+</script>
+<!-- VIDEO MODAL -->
+<div class="vid-modal-overlay" id="vid-modal-overlay" onclick="closeVideoModal(event)">
+  <div class="vid-modal">
+    <div class="vid-modal-header">
+      <span class="vid-modal-title" id="vid-modal-title"></span>
+      <button class="vid-modal-close" onclick="closeVideoModal()">✕</button>
+    </div>
+    <div class="vid-modal-body">
+      <video id="vid-modal-player" playsinline controls></video>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.plyr.io/3.8.3/plyr.js"></script>
+<script>
+let _plyrInstance = null;
+
+function openVideoModal(username, filename) {
+  const src = `/api/recordings/${encodeURIComponent(username)}/${encodeURIComponent(filename)}?inline=true`;
+  const overlay = document.getElementById('vid-modal-overlay');
+  const videoEl = document.getElementById('vid-modal-player');
+  document.getElementById('vid-modal-title').textContent = filename;
+
+  // destroy previous instance if any
+  if (_plyrInstance) { _plyrInstance.destroy(); _plyrInstance = null; }
+
+  // reset video element
+  videoEl.src = '';
+  videoEl.load();
+
+  // init Plyr then set source
+  _plyrInstance = new Plyr(videoEl, {
+    controls: ['play-large','play','progress','current-time','mute','volume','fullscreen'],
+    keyboard: { global: false },
+  });
+  _plyrInstance.source = {
+    type: 'video',
+    sources: [{ src, type: 'video/mp4' }],
+  };
+
+  overlay.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeVideoModal(e) {
+  // only close if clicking overlay background, not the modal itself
+  if (e && e.target !== document.getElementById('vid-modal-overlay')) return;
+  document.getElementById('vid-modal-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+  if (_plyrInstance) { _plyrInstance.pause(); }
+}
+
+// close on Escape key
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    document.getElementById('vid-modal-overlay').classList.remove('open');
+    document.body.style.overflow = '';
+    if (_plyrInstance) _plyrInstance.pause();
+  }
+});
 </script>
 </body>
 </html>
