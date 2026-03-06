@@ -35,7 +35,7 @@ STATIC_DIR = BASE_DIR / "static"
 DATA_DIR = Path(os.environ.get("DATA_DIR", str(BASE_DIR.parent / "data")))
 WATCHLIST_FILE = DATA_DIR / "watchlist.json"
 RECORDINGS_DIR = DATA_DIR / "recordings"
-LOG_FILE = BASE_DIR.parent / "tiktok-recorder.log"
+LOG_FILE = DATA_DIR / "logs" / "tiktok-recorder.log"
 
 # ensure all data subdirs exist
 (DATA_DIR / "recordings").mkdir(parents=True, exist_ok=True)
@@ -175,18 +175,23 @@ def _get_cookies() -> dict:
 
 
 def _make_config(username: str, entry: dict, mode: Mode) -> RecorderConfig:
-    output_dir = Path(entry.get("output") or RECORDINGS_DIR) / username
-    output_dir.mkdir(parents=True, exist_ok=True)  # ← ADD THIS
     return RecorderConfig(
         mode=mode,
         user=username,
         automatic_interval=entry.get("interval", 5),
         cookies=_get_cookies(),
         proxy=entry.get("proxy"),
-        output=str(output_dir),
+        output=str(entry.get("output") or RECORDINGS_DIR / username),
         duration=entry.get("duration"),
         bitrate=entry.get("bitrate"),
     )
+
+
+def _count_recordings(username: str) -> int:
+    user_dir = RECORDINGS_DIR / username
+    if not user_dir.exists():
+        return 0
+    return len(list(user_dir.glob("*.mp4")))
 
 
 def _recording_worker(username: str, stop_event: threading.Event):
@@ -243,9 +248,6 @@ def _recording_worker(username: str, stop_event: threading.Event):
                 with _state_lock:
                     if username in watchlist:
                         watchlist[username]["status"] = "monitoring"
-                        watchlist[username]["recordings_count"] = (
-                            watchlist[username].get("recordings_count", 0) + 1
-                        )
                         _save_watchlist(watchlist)
             else:
                 with _state_lock:
@@ -310,7 +312,10 @@ async def startup():
 @app.get("/api/users")
 def list_users():
     with _state_lock:
-        return list(watchlist.values())
+        users = [dict(e) for e in watchlist.values()]
+    for u in users:
+        u["recordings_count"] = _count_recordings(u["username"])
+    return users
 
 
 @app.post("/api/users", status_code=201)
@@ -333,7 +338,6 @@ def add_user(req: AddUserRequest):
             "status": "monitoring" if req.mode == "automatic" else "idle",
             "last_seen_live": None,
             "last_error": None,
-            "recordings_count": 0,
         }
         watchlist[username] = entry
         _save_watchlist(watchlist)
@@ -407,9 +411,6 @@ def manual_record(username: str, background_tasks: BackgroundTasks):
             with _state_lock:
                 if username in watchlist:
                     watchlist[username]["status"] = "idle"
-                    watchlist[username]["recordings_count"] = (
-                        watchlist[username].get("recordings_count", 0) + 1
-                    )
                     _save_watchlist(watchlist)
 
     background_tasks.add_task(_do_record)
