@@ -35,7 +35,7 @@ STATIC_DIR = BASE_DIR / "static"
 DATA_DIR = Path(os.environ.get("DATA_DIR", str(BASE_DIR.parent / "data")))
 WATCHLIST_FILE = DATA_DIR / "watchlist.json"
 RECORDINGS_DIR = DATA_DIR / "recordings"
-LOG_FILE = SRC_DIR / "tiktok-recorder.log"
+LOG_FILE = BASE_DIR.parent / "tiktok-recorder.log"
 
 # ensure all data subdirs exist
 (DATA_DIR / "recordings").mkdir(parents=True, exist_ok=True)
@@ -176,7 +176,7 @@ def _get_cookies() -> dict:
 
 def _make_config(username: str, entry: dict, mode: Mode) -> RecorderConfig:
     output_dir = Path(entry.get("output") or RECORDINGS_DIR) / username
-    output_dir.mkdir(parents=True, exist_ok=True)   # ← ADD THIS
+    output_dir.mkdir(parents=True, exist_ok=True)  # ← ADD THIS
     return RecorderConfig(
         mode=mode,
         user=username,
