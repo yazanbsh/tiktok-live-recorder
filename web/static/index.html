@@ -1238,8 +1238,18 @@ function toggleFile(key, checked) {
 function toggleSelectAll(cb) {
   document.querySelectorAll('.rec-checkbox').forEach(box => {
     box.checked = cb.checked;
-    toggleFile(box.dataset.key, cb.checked);
+    if (cb.checked) selectedFiles[box.dataset.key] = true;
+    else delete selectedFiles[box.dataset.key];
+    document.querySelectorAll(`.rec-card[data-key="${box.dataset.key}"]`).forEach(c => {
+      c.classList.toggle('selected', cb.checked);
+    });
   });
+  // update all section checkboxes
+  document.querySelectorAll('.rec-section-cb').forEach(scb => {
+    scb.checked = cb.checked;
+    scb.indeterminate = false;
+  });
+  updateBatchBar();
 }
 
 function clearSelection() {
@@ -1298,9 +1308,14 @@ function toggleSection(username) {
 function toggleSectionSelect(username, checked) {
   document.querySelectorAll(`.rec-checkbox[data-user="${username}"]`).forEach(box => {
     box.checked = checked;
-    toggleFile(box.dataset.key, checked);
+    if (checked) selectedFiles[box.dataset.key] = true;
+    else delete selectedFiles[box.dataset.key];
+    document.querySelectorAll(`.rec-card[data-key="${box.dataset.key}"]`).forEach(c => {
+      c.classList.toggle('selected', checked);
+    });
   });
   updateSectionCheckbox(username);
+  updateBatchBar();
 }
 
 function updateSectionCheckbox(username) {
