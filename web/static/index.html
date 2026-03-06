@@ -622,6 +622,8 @@
   .rec-btn-dl:hover  { background: rgba(0,229,160,0.1); border-color: var(--green); }
   .rec-btn-del { color: var(--accent); }
   .rec-btn-del:hover { background: rgba(255,45,85,0.1); border-color: var(--accent); }
+  .rec-btn-play { color: #a78bfa; }
+  .rec-btn-play:hover { background: rgba(167,139,250,0.1); border-color: #a78bfa; }
 
   /* ── BATCH ACTION BAR ────────────────────── */
   .batch-bar {
@@ -1240,6 +1242,12 @@ function updateSectionCheckbox(username) {
   cb.indeterminate = checked > 0 && checked < boxes.length;
 }
 
+function playInFilebrowser(username, filename) {
+  const host = window.location.hostname;
+  const url = `http://${host}:9999/files/recordings/${encodeURIComponent(username)}/${encodeURIComponent(filename)}`;
+  window.open(url, '_blank');
+}
+
 function singleDownload(username, filename) {
   const a = document.createElement('a');
   a.href = `/api/recordings/${encodeURIComponent(username)}/${encodeURIComponent(filename)}`;
@@ -1322,6 +1330,7 @@ async function loadRecordings() {
             <span>${new Date(f.created_at).toLocaleDateString()}</span>
           </div>
           <div class="rec-actions" onclick="event.stopPropagation()">
+            <button class="rec-btn rec-btn-play" onclick="playInFilebrowser('${f.username}','${f.filename}')">▶ Play</button>
             <button class="rec-btn rec-btn-dl"  onclick="singleDownload('${f.username}','${f.filename}')">↓ Download</button>
             <button class="rec-btn rec-btn-del" onclick="singleDelete('${f.username}','${f.filename}')">✕ Delete</button>
           </div>
