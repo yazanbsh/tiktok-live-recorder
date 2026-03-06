@@ -500,6 +500,7 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 14px;
+    padding-bottom: 80px;
   }
   .rec-card {
     background: var(--card);
@@ -509,6 +510,20 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+    cursor: pointer;
+    transition: border-color 0.15s;
+    position: relative;
+  }
+  .rec-card.selected {
+    border-color: var(--accent);
+    background: rgba(255,45,85,0.05);
+  }
+  .rec-card input[type="checkbox"] {
+    position: absolute;
+    top: 12px; right: 12px;
+    width: 15px; height: 15px;
+    cursor: pointer;
+    accent-color: var(--accent);
   }
   .rec-filename {
     font-family: var(--mono);
@@ -516,6 +531,7 @@
     color: var(--text);
     word-break: break-all;
     line-height: 1.5;
+    padding-right: 20px;
   }
   .rec-meta {
     display: flex;
@@ -524,6 +540,31 @@
     font-size: 10px;
     color: var(--muted);
   }
+
+  /* ── BATCH ACTION BAR ────────────────────── */
+  .batch-bar {
+    display: none;
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--card);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    padding: 12px 20px;
+    gap: 14px;
+    align-items: center;
+    z-index: 200;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .batch-bar.visible { display: flex; }
+  .batch-count {
+    color: var(--text2);
+    margin-right: 4px;
+  }
+  .batch-count span { color: var(--text); font-weight: 700; }
 
   /* ── TOAST ───────────────────────────────── */
   #toast-container {
@@ -691,7 +732,13 @@
       <div class="panel" id="panel-recordings">
         <div class="section-header">
           <span class="section-title">Saved Recordings</span>
-          <button class="refresh-btn" onclick="loadRecordings()" title="Refresh">↻</button>
+          <div style="display:flex;gap:10px;align-items:center;">
+            <label style="display:flex;gap:6px;align-items:center;font-family:var(--mono);font-size:11px;color:var(--text2);cursor:pointer;margin:0;">
+              <input type="checkbox" id="select-all-recordings" style="width:14px;height:14px;accent-color:var(--accent);" onchange="toggleSelectAll(this)">
+              Select all
+            </label>
+            <button class="refresh-btn" onclick="loadRecordings()" title="Refresh">↻</button>
+          </div>
         </div>
         <div class="rec-grid" id="rec-grid">
           <div class="empty-state" style="grid-column:1/-1">
@@ -700,6 +747,14 @@
           </div>
         </div>
       </div>
+
+  <!-- BATCH ACTION BAR -->
+  <div class="batch-bar" id="batch-bar">
+    <span class="batch-count"><span id="batch-count-num">0</span> selected</span>
+    <button class="btn btn-ghost" onclick="batchDownload()">↓ Download</button>
+    <button class="btn" style="background:rgba(255,45,85,0.15);color:var(--accent);border:1px solid rgba(255,45,85,0.3);" onclick="batchDelete()">✕ Delete</button>
+    <button class="action-btn" onclick="clearSelection()" style="margin-left:4px;">✕ Clear</button>
+  </div>
 
       <!-- ── LOGS PANEL ── -->
       <div class="panel" id="panel-logs">
@@ -862,7 +917,7 @@ function renderUserRow(u) {
       <div class="username-cell">
         <div class="avatar">${initials}</div>
         <div>
-          <div class="uname"><a href="https://tiktok.com/@${u.username}" target="_blank" style="color:inherit;text-decoration:none;"><span class="at">@</span>${u.username}</a></div>
+          <div class="uname"><span class="at">@</span>${u.username}</div>
           ${u.last_error ? `<div style="font-size:10px;color:var(--accent);font-family:var(--mono);margin-top:2px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${u.last_error}">${u.last_error}</div>` : ''}
         </div>
       </div>
@@ -1005,6 +1060,81 @@ document.getElementById('f-username').addEventListener('keydown', e => {
 });
 
 // ── Recordings ───────────────────────────────────────────────────────────────
+// { "username/filename" -> true }
+const selectedFiles = {};
+
+function updateBatchBar() {
+  const count = Object.keys(selectedFiles).length;
+  const bar = document.getElementById('batch-bar');
+  document.getElementById('batch-count-num').textContent = count;
+  bar.classList.toggle('visible', count > 0);
+  // sync select-all checkbox
+  const allBoxes = document.querySelectorAll('.rec-checkbox');
+  const selectAll = document.getElementById('select-all-recordings');
+  if (selectAll) selectAll.checked = allBoxes.length > 0 && allBoxes.length === count;
+}
+
+function toggleFile(key, checked) {
+  if (checked) selectedFiles[key] = true;
+  else delete selectedFiles[key];
+  // update card highlight
+  document.querySelectorAll(`.rec-card[data-key="${key}"]`).forEach(c => {
+    c.classList.toggle('selected', checked);
+  });
+  updateBatchBar();
+}
+
+function toggleSelectAll(cb) {
+  document.querySelectorAll('.rec-checkbox').forEach(box => {
+    box.checked = cb.checked;
+    toggleFile(box.dataset.key, cb.checked);
+  });
+}
+
+function clearSelection() {
+  Object.keys(selectedFiles).forEach(k => delete selectedFiles[k]);
+  document.querySelectorAll('.rec-checkbox').forEach(b => b.checked = false);
+  document.querySelectorAll('.rec-card').forEach(c => c.classList.remove('selected'));
+  const sa = document.getElementById('select-all-recordings');
+  if (sa) sa.checked = false;
+  updateBatchBar();
+}
+
+async function batchDownload() {
+  const keys = Object.keys(selectedFiles);
+  if (!keys.length) return;
+  for (const key of keys) {
+    const [username, filename] = key.split('/');
+    const a = document.createElement('a');
+    a.href = `/api/recordings/${encodeURIComponent(username)}/${encodeURIComponent(filename)}`;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    await new Promise(r => setTimeout(r, 300)); // slight delay between downloads
+  }
+}
+
+async function batchDelete() {
+  const keys = Object.keys(selectedFiles);
+  if (!keys.length) return;
+  if (!confirm(`Delete ${keys.length} file${keys.length !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+  try {
+    const res = await apiFetch('/api/recordings', {
+      method: 'DELETE',
+      body: JSON.stringify({ files: keys }),
+    });
+    const d = res.deleted?.length || 0;
+    const f = res.failed?.length || 0;
+    toast(`Deleted ${d} file${d !== 1 ? 's' : ''}${f ? `, ${f} failed` : ''}`, d > 0 ? 'success' : 'error');
+    clearSelection();
+    loadRecordings();
+    loadStats();
+  } catch(e) {
+    toast(`Error: ${e.message}`, 'error');
+  }
+}
+
 async function loadRecordings() {
   const grid = document.getElementById('rec-grid');
   try {
@@ -1014,6 +1144,7 @@ async function loadRecordings() {
         <div class="empty-icon">▣</div>
         <div class="empty-text">No recordings yet.<br>Recordings will appear here once captured.</div>
       </div>`;
+      clearSelection();
       return;
     }
     // group by username
@@ -1025,14 +1156,19 @@ async function loadRecordings() {
     }
     let html = '';
     for (const [username, recs] of Object.entries(groups)) {
-      html += `<div style="grid-column:1/-1;margin-top:18px;margin-bottom:6px;">
+      html += `<div style="grid-column:1/-1;margin-top:18px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;">
         <span style="font-family:var(--mono);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text2)">
           <span style="color:var(--accent)">@</span>${username}
           <span style="color:var(--muted);margin-left:8px">${recs.length} clip${recs.length !== 1 ? 's' : ''}</span>
         </span>
       </div>`;
       for (const f of recs) {
-        html += `<div class="rec-card">
+        const key = `${f.username}/${f.filename}`;
+        const isSelected = !!selectedFiles[key];
+        html += `<div class="rec-card${isSelected ? ' selected' : ''}" data-key="${key}" onclick="toggleFile('${key}', !document.querySelector('.rec-checkbox[data-key=\'${key}\']').checked); document.querySelector('.rec-checkbox[data-key=\'${key}\']').checked = !!selectedFiles['${key}']">
+          <input type="checkbox" class="rec-checkbox" data-key="${key}" ${isSelected ? 'checked' : ''}
+            onclick="event.stopPropagation()"
+            onchange="toggleFile('${key}', this.checked)">
           <div class="rec-filename">${f.filename}</div>
           <div class="rec-meta">
             <span>${f.size_mb} MB</span>
@@ -1042,6 +1178,7 @@ async function loadRecordings() {
       }
     }
     grid.innerHTML = html;
+    updateBatchBar();
   } catch(e) {
     grid.innerHTML = `<div style="color:var(--accent);font-family:var(--mono);font-size:11px;">${e.message}</div>`;
   }

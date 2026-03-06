@@ -498,8 +498,8 @@ def get_stats():
         monitoring = sum(
             1 for e in watchlist.values() if e.get("status") == "monitoring"
         )
-        total_recs = sum(e.get("recordings_count", 0) for e in watchlist.values())
-    rec_files = list(RECORDINGS_DIR.glob("*.mp4"))
+    total_recs = len(list(RECORDINGS_DIR.rglob("*.mp4")))
+    rec_files = list(RECORDINGS_DIR.rglob("*.mp4"))
     disk_mb = sum(f.stat().st_size for f in rec_files) / 1024 / 1024
     return {
         "total_users": total,
@@ -508,6 +508,55 @@ def get_stats():
         "total_recordings": total_recs,
         "disk_used_mb": round(disk_mb, 1),
     }
+
+
+@app.get("/api/recordings/{username}/{filename}")
+def download_recording(username: str, filename: str):
+    """Serve a recording file as a download."""
+    file_path = RECORDINGS_DIR / username / filename
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(404, "File not found")
+    # prevent path traversal
+    try:
+        file_path.relative_to(RECORDINGS_DIR)
+    except ValueError:
+        raise HTTPException(403, "Access denied")
+    return FileResponse(
+        path=str(file_path),
+        filename=filename,
+        media_type="video/mp4",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+class BatchDeleteRequest(BaseModel):
+    files: list[str]  # list of "username/filename"
+
+
+@app.delete("/api/recordings")
+def batch_delete_recordings(req: BatchDeleteRequest):
+    """Delete multiple recording files."""
+    deleted, failed = [], []
+    for entry in req.files:
+        try:
+            parts = entry.split("/", 1)
+            if len(parts) != 2:
+                failed.append({"file": entry, "error": "Invalid path format"})
+                continue
+            username, filename = parts
+            file_path = RECORDINGS_DIR / username / filename
+            # prevent path traversal
+            file_path.relative_to(RECORDINGS_DIR)
+            if not file_path.exists():
+                failed.append({"file": entry, "error": "File not found"})
+                continue
+            file_path.unlink()
+            deleted.append(entry)
+        except ValueError:
+            failed.append({"file": entry, "error": "Access denied"})
+        except Exception as e:
+            failed.append({"file": entry, "error": str(e)})
+    return {"deleted": deleted, "failed": failed}
 
 
 # ── static / frontend ──────────────────────────────────────────────────────────
