@@ -1068,7 +1068,7 @@ function renderUserRow(u) {
       <div class="username-cell">
         <div class="avatar">${initials}</div>
         <div>
-          <div class="uname"><span class="at">@</span>${u.username}</div>
+          <div class="uname"><a href="https://tiktok.com/@${u.username}" target="_blank" style="color:inherit;text-decoration:none;"><span class="at">@</span>${u.username}</a></div>
           ${u.last_error ? `<div style="font-size:10px;color:var(--accent);font-family:var(--mono);margin-top:2px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${u.last_error}">${u.last_error}</div>` : ''}
         </div>
       </div>
