@@ -1515,6 +1515,7 @@ async function submitDownloads() {
       </div>`;
     }).join('');
 
+    document.getElementById('dl-urls-input').value = '';
     document.getElementById('dl-results').style.display = 'block';
     if (s.downloaded > 0) loadDownloadsList();
     if (s.downloaded > 0) toast(`Downloaded ${s.downloaded} video${s.downloaded !== 1 ? 's' : ''}`, 'success');
