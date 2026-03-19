@@ -805,6 +805,9 @@
       <div class="nav-item" onclick="showPanel('recordings')">
         <span class="nav-icon">▣</span> Recordings
       </div>
+      <div class="nav-item" onclick="showPanel('downloads')">
+        <span class="nav-icon">↓</span> Downloads
+      </div>
       <div class="nav-item" onclick="showPanel('logs')">
         <span class="nav-icon">≡</span> Logs
       </div>
@@ -907,6 +910,46 @@
     <button class="action-btn" onclick="clearSelection()" style="margin-left:4px;">✕ Clear</button>
   </div>
 
+      <!-- ── DOWNLOADS PANEL ── -->
+      <div class="panel" id="panel-downloads">
+        <div class="section-header">
+          <span class="section-title">TikTok Downloader</span>
+          <button class="refresh-btn" onclick="loadDownloadsList()" title="Refresh files">↻</button>
+        </div>
+
+        <!-- Input area -->
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px;">
+          <textarea id="dl-urls-input" placeholder="Paste one or more TikTok URLs, one per line..."
+            style="width:100%;min-height:100px;background:var(--card);border:1px solid var(--border2);border-radius:var(--radius);
+                   color:var(--text);font-family:var(--mono);font-size:11px;padding:12px;resize:vertical;
+                   box-sizing:border-box;outline:none;"></textarea>
+          <div style="display:flex;gap:10px;align-items:center;">
+            <button class="btn btn-primary" id="dl-submit-btn" onclick="submitDownloads()">↓ Download</button>
+            <button class="btn btn-ghost" onclick="document.getElementById('dl-urls-input').value=''">Clear</button>
+          </div>
+        </div>
+
+        <!-- Results area -->
+        <div id="dl-results" style="display:none;margin-bottom:24px;">
+          <div class="section-header" style="margin-bottom:10px;">
+            <span class="section-title" style="font-size:12px;">Last Batch Results</span>
+          </div>
+          <div id="dl-summary" style="font-family:var(--mono);font-size:11px;color:var(--text2);margin-bottom:10px;"></div>
+          <div id="dl-result-list" style="display:flex;flex-direction:column;gap:6px;"></div>
+        </div>
+
+        <!-- Downloaded files -->
+        <div class="section-header" style="margin-bottom:10px;">
+          <span class="section-title" style="font-size:12px;">Downloaded Files</span>
+        </div>
+        <div class="rec-grid" id="dl-grid">
+          <div class="empty-state">
+            <div class="empty-icon">↓</div>
+            <div class="empty-text">No downloads yet.</div>
+          </div>
+        </div>
+      </div>
+
       <!-- ── LOGS PANEL ── -->
       <div class="panel" id="panel-logs">
         <div class="log-container">
@@ -992,9 +1035,10 @@ function showPanel(name) {
     if (n.textContent.toLowerCase().includes(name.slice(0,4))) n.classList.add('active');
   });
   document.getElementById('page-title').textContent =
-    { watchlist: 'Watchlist', recordings: 'Recordings', logs: 'System Log' }[name];
+    { watchlist: 'Watchlist', recordings: 'Recordings', downloads: 'Downloads', logs: 'System Log' }[name] || name;
 
   if (name === 'recordings') loadRecordings();
+  if (name === 'downloads') loadDownloadsList();
   if (name === 'logs') loadLogs();
 }
 
@@ -1430,6 +1474,141 @@ async function loadRecordings() {
   }
 }
 
+// ── Downloads ────────────────────────────────────────────────────────────────
+async function submitDownloads() {
+  const input = document.getElementById('dl-urls-input').value.trim();
+  if (!input) { toast('Please enter at least one URL', 'error'); return; }
+
+  const urls = input.split('\n').map(u => u.trim()).filter(Boolean);
+  const btn = document.getElementById('dl-submit-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Processing...';
+
+  try {
+    const res = await apiFetch('/api/downloads', {
+      method: 'POST',
+      body: JSON.stringify({ urls }),
+    });
+
+    // show summary
+    const s = res.summary;
+    document.getElementById('dl-summary').innerHTML =
+      `Total: <b style="color:var(--text)">${s.total}</b> &nbsp;|&nbsp; ` +
+      `<span style="color:var(--green)">Downloaded: ${s.downloaded}</span> &nbsp;|&nbsp; ` +
+      `<span style="color:var(--yellow)">Skipped: ${s.skipped}</span> &nbsp;|&nbsp; ` +
+      `<span style="color:var(--accent)">Errors: ${s.errors}</span>`;
+
+    // show per-url results
+    const list = document.getElementById('dl-result-list');
+    list.innerHTML = res.results.map(r => {
+      const color = r.status === 'downloaded' ? 'var(--green)'
+                  : r.status === 'skipped'    ? 'var(--yellow)'
+                  : 'var(--accent)';
+      const icon  = r.status === 'downloaded' ? '✓'
+                  : r.status === 'skipped'    ? '↷'
+                  : '✕';
+      return `<div style="font-family:var(--mono);font-size:10px;display:flex;gap:8px;align-items:baseline;padding:4px 0;border-bottom:1px solid var(--border);">
+        <span style="color:${color};flex-shrink:0;">${icon}</span>
+        <span style="color:var(--muted);word-break:break-all;flex:1;">${r.url}</span>
+        <span style="color:${color};flex-shrink:0;white-space:nowrap;">${r.status}</span>
+        <span style="color:var(--text2);flex-shrink:0;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.reason}">${r.reason}</span>
+      </div>`;
+    }).join('');
+
+    document.getElementById('dl-results').style.display = 'block';
+    if (s.downloaded > 0) loadDownloadsList();
+    if (s.downloaded > 0) toast(`Downloaded ${s.downloaded} video${s.downloaded !== 1 ? 's' : ''}`, 'success');
+    if (s.errors > 0) toast(`${s.errors} error${s.errors !== 1 ? 's' : ''} — check results`, 'error');
+    if (s.skipped > 0 && s.downloaded === 0 && s.errors === 0) toast(`All ${s.skipped} already downloaded`, 'info');
+
+  } catch(e) {
+    toast(`Error: ${e.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '↓ Download';
+  }
+}
+
+async function loadDownloadsList() {
+  const grid = document.getElementById('dl-grid');
+  if (!grid) return;
+  try {
+    const files = await apiFetch('/api/downloads');
+    if (!files.length) {
+      grid.innerHTML = `<div class="empty-state"><div class="empty-icon">↓</div><div class="empty-text">No downloads yet.</div></div>`;
+      return;
+    }
+    // group by username
+    const groups = {};
+    for (const f of files) {
+      if (!groups[f.username]) groups[f.username] = [];
+      groups[f.username].push(f);
+    }
+    let html = '';
+    for (const [username, items] of Object.entries(groups)) {
+      const totalMB = items.reduce((s, f) => s + f.size_mb, 0).toFixed(1);
+      html += `<div class="rec-section" data-user="dl_${username}">
+        <div class="rec-section-header" onclick="toggleSection('dl_${username}')">
+          <span class="rec-section-arrow">▼</span>
+          <span class="rec-section-title">
+            <a href="https://tiktok.com/@${username}" target="_blank" onclick="event.stopPropagation()">@${username}</a>
+          </span>
+          <span class="rec-section-meta">
+            <span>${items.length} file${items.length !== 1 ? 's' : ''}</span>
+            <span>${totalMB} MB</span>
+          </span>
+        </div>
+        <div class="rec-section-body">`;
+      for (const f of items) {
+        html += `<div class="rec-card">
+          <div class="rec-card-top">
+            <a class="rec-filename" href="/api/downloads/${f.username}/${encodeURIComponent(f.filename)}?inline=true"
+              target="_blank">${f.filename}</a>
+          </div>
+          <div class="rec-meta">
+            <span>${f.size_mb} MB</span>
+            <span>${new Date(f.created_at).toLocaleDateString()}</span>
+          </div>
+          <div class="rec-actions" onclick="event.stopPropagation()">
+            <button class="rec-btn rec-btn-play" onclick="openVideoModal('${f.username}','${f.filename}','dl')">▶ Play</button>
+            <button class="rec-btn rec-btn-dl" onclick="dlSingleDownload('${f.username}','${f.filename}')">↓ Download</button>
+            <button class="rec-btn rec-btn-del" onclick="dlSingleDelete('${f.username}','${f.filename}')">✕ Delete</button>
+          </div>
+        </div>`;
+      }
+      html += `</div></div>`;
+    }
+    grid.innerHTML = html;
+  } catch(e) {
+    grid.innerHTML = `<div style="color:var(--accent);font-family:var(--mono);font-size:11px;">${e.message}</div>`;
+  }
+}
+
+function dlSingleDownload(username, filename) {
+  const a = document.createElement('a');
+  a.href = `/api/downloads/${encodeURIComponent(username)}/${encodeURIComponent(filename)}`;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+async function dlSingleDelete(username, filename) {
+  if (!confirm(`Delete ${filename}?`)) return;
+  try {
+    const res = await apiFetch('/api/downloads', {
+      method: 'DELETE',
+      body: JSON.stringify({ files: [`${username}/${filename}`] }),
+    });
+    if (res.deleted?.length) {
+      toast(`Deleted ${filename}`, 'success');
+      loadDownloadsList();
+    } else {
+      toast(`Failed: ${res.failed?.[0]?.error || 'unknown error'}`, 'error');
+    }
+  } catch(e) { toast(`Error: ${e.message}`, 'error'); }
+}
+
 // ── Logs ─────────────────────────────────────────────────────────────────────
 async function loadLogs() {
   const container = document.getElementById('log-lines');
@@ -1501,8 +1680,9 @@ setInterval(() => {
 <script>
 let _plyrInstance = null;
 
-function openVideoModal(username, filename) {
-  const src = `/api/recordings/${encodeURIComponent(username)}/${encodeURIComponent(filename)}?inline=true`;
+function openVideoModal(username, filename, type = 'rec') {
+  const base = type === 'dl' ? '/api/downloads' : '/api/recordings';
+  const src = `${base}/${encodeURIComponent(username)}/${encodeURIComponent(filename)}?inline=true`;
   const overlay = document.getElementById('vid-modal-overlay');
   const videoEl = document.getElementById('vid-modal-player');
   document.getElementById('vid-modal-title').textContent = filename;

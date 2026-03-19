@@ -6,9 +6,12 @@ Run with:  uv run uvicorn web.server:app --host 0.0.0.0 --port 8000 --reload
 
 import json
 import os
+import re
 import sys
 import time
+import asyncio
 import threading
+import httpx
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -30,22 +33,27 @@ from core.tiktok_api import TikTokAPI
 from utils.video_management import VideoManagement
 
 # ── paths ──────────────────────────────────────────────────────────────────────
-BASE_DIR = Path(__file__).parent
-STATIC_DIR = BASE_DIR / "static"
-DATA_DIR = Path(os.environ.get("DATA_DIR", str(BASE_DIR.parent / "data")))
+BASE_DIR       = Path(__file__).parent
+STATIC_DIR     = BASE_DIR / "static"
+DATA_DIR       = Path(os.environ.get("DATA_DIR", str(BASE_DIR.parent / "data")))
 WATCHLIST_FILE = DATA_DIR / "watchlist.json"
 RECORDINGS_DIR = DATA_DIR / "recordings"
-LOG_FILE = DATA_DIR / "logs" / "tiktok-recorder.log"
+DOWNLOADS_DIR  = DATA_DIR / "downloads"
+LOG_FILE       = DATA_DIR / "logs" / "tiktok-recorder.log"
 
 # ensure all data subdirs exist
 (DATA_DIR / "recordings").mkdir(parents=True, exist_ok=True)
+(DATA_DIR / "downloads").mkdir(parents=True, exist_ok=True)
 (DATA_DIR / "logs").mkdir(parents=True, exist_ok=True)
+
+# tikwm endpoints
+TIKWM_SUBMIT = "https://www.tikwm.com/api/video/task/submit"
+TIKWM_RESULT = "https://www.tikwm.com/api/video/task/result"
 
 app = FastAPI(title="TikTok Live Recorder", version="1.0.0")
 
 # ── in-memory state ────────────────────────────────────────────────────────────
 _state_lock = threading.Lock()
-
 
 def _load_watchlist() -> dict:
     if WATCHLIST_FILE.exists():
@@ -55,42 +63,37 @@ def _load_watchlist() -> dict:
             pass
     return {}
 
-
 def _save_watchlist(data: dict):
     WATCHLIST_FILE.write_text(json.dumps(data, indent=2))
-
 
 watchlist: dict = _load_watchlist()
 
 # { username -> Thread }  — the outer monitoring/polling loop
-_workers: dict[str, threading.Thread] = {}
+_workers:         dict[str, threading.Thread] = {}
 # { username -> Event }   — set to stop the whole worker (monitoring + recording)
-_stop_events: dict[str, threading.Event] = {}
+_stop_events:     dict[str, threading.Event]  = {}
 # { username -> Event }   — set to stop only the active recording, keep monitoring
-_rec_stop_events: dict[str, threading.Event] = {}
+_rec_stop_events: dict[str, threading.Event]  = {}
 
 
 # ── pydantic models ────────────────────────────────────────────────────────────
 
-
 class AddUserRequest(BaseModel):
-    username: str
-    mode: str = "automatic"
-    interval: int = 5
-    proxy: Optional[str] = None
-    output: Optional[str] = None
-    duration: Optional[int] = None
-    bitrate: Optional[str] = None
-
+    username:  str
+    mode:      str           = "automatic"
+    interval:  int           = 5
+    proxy:     Optional[str] = None
+    output:    Optional[str] = None
+    duration:  Optional[int] = None
+    bitrate:   Optional[str] = None
 
 class UpdateUserRequest(BaseModel):
-    mode: Optional[str] = None
+    mode:     Optional[str] = None
     interval: Optional[int] = None
-    proxy: Optional[str] = None
+    proxy:    Optional[str] = None
 
 
 # ── StoppableTikTokRecorder ────────────────────────────────────────────────────
-
 
 class StoppableTikTokRecorder(TikTokRecorder):
     """
@@ -149,9 +152,7 @@ class StoppableTikTokRecorder(TikTokRecorder):
                     time.sleep(2)
 
                 except Exception as ex:
-                    logger.error(
-                        f"Unexpected error during recording: {ex}", exc_info=True
-                    )
+                    logger.error(f"Unexpected error during recording: {ex}", exc_info=True)
                     stop_recording = True
 
                 finally:
@@ -166,13 +167,11 @@ class StoppableTikTokRecorder(TikTokRecorder):
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
-
 def _get_cookies() -> dict:
     try:
         return read_cookies()
     except Exception:
         return {}
-
 
 def _make_config(username: str, entry: dict, mode: Mode) -> RecorderConfig:
     return RecorderConfig(
@@ -185,7 +184,6 @@ def _make_config(username: str, entry: dict, mode: Mode) -> RecorderConfig:
         duration=entry.get("duration"),
         bitrate=entry.get("bitrate"),
     )
-
 
 def _count_recordings(username: str) -> int:
     user_dir = RECORDINGS_DIR / username
@@ -200,9 +198,9 @@ def _recording_worker(username: str, stop_event: threading.Event):
     stop_event              → kills the whole worker (user removed / server shutdown)
     _rec_stop_events[user]  → stops only the active recording, loop continues
     """
-    entry = watchlist.get(username, {})
-    cookies = _get_cookies()
-    api = TikTokAPI(proxy=entry.get("proxy"), cookies=cookies)
+    entry    = watchlist.get(username, {})
+    cookies  = _get_cookies()
+    api      = TikTokAPI(proxy=entry.get("proxy"), cookies=cookies)
     interval = entry.get("interval", 5)
 
     while not stop_event.is_set():
@@ -211,9 +209,7 @@ def _recording_worker(username: str, stop_event: threading.Event):
             if room_id and api.is_room_alive(room_id):
                 with _state_lock:
                     if username in watchlist:
-                        watchlist[username]["last_seen_live"] = (
-                            datetime.utcnow().isoformat()
-                        )
+                        watchlist[username]["last_seen_live"] = datetime.utcnow().isoformat()
                         watchlist[username]["status"] = "recording"
                         _save_watchlist(watchlist)
 
@@ -221,7 +217,7 @@ def _recording_worker(username: str, stop_event: threading.Event):
                 rec_stop = threading.Event()
                 _rec_stop_events[username] = rec_stop
 
-                cfg = _make_config(username, entry, Mode.MANUAL)
+                cfg      = _make_config(username, entry, Mode.MANUAL)
                 recorder = StoppableTikTokRecorder(cfg, rec_stop)
 
                 rec_thread = threading.Thread(
@@ -232,11 +228,7 @@ def _recording_worker(username: str, stop_event: threading.Event):
                 rec_thread.start()
 
                 # wait until: stream ends | worker stopped | recording manually stopped
-                while (
-                    rec_thread.is_alive()
-                    and not stop_event.is_set()
-                    and not rec_stop.is_set()
-                ):
+                while rec_thread.is_alive() and not stop_event.is_set() and not rec_stop.is_set():
                     rec_thread.join(timeout=2)
 
                 # if the whole worker is being killed, propagate to recording too
@@ -284,7 +276,6 @@ def _start_worker(username: str):
     t.start()
     _workers[username] = t
 
-
 def _stop_worker(username: str):
     # first stop the active recording if any
     if username in _rec_stop_events:
@@ -308,7 +299,6 @@ async def startup():
 
 # ── API routes ─────────────────────────────────────────────────────────────────
 
-
 @app.get("/api/users")
 def list_users():
     with _state_lock:
@@ -327,17 +317,17 @@ def add_user(req: AddUserRequest):
         if username in watchlist:
             raise HTTPException(409, f"@{username} is already in the watchlist")
         entry = {
-            "username": username,
-            "mode": req.mode,
-            "interval": req.interval,
-            "proxy": req.proxy,
-            "output": req.output,
-            "duration": req.duration,
-            "bitrate": req.bitrate,
-            "added_at": datetime.utcnow().isoformat(),
-            "status": "monitoring" if req.mode == "automatic" else "idle",
-            "last_seen_live": None,
-            "last_error": None,
+            "username":         username,
+            "mode":             req.mode,
+            "interval":         req.interval,
+            "proxy":            req.proxy,
+            "output":           req.output,
+            "duration":         req.duration,
+            "bitrate":          req.bitrate,
+            "added_at":         datetime.utcnow().isoformat(),
+            "status":           "monitoring" if req.mode == "automatic" else "idle",
+            "last_seen_live":   None,
+            "last_error":       None,
         }
         watchlist[username] = entry
         _save_watchlist(watchlist)
@@ -352,7 +342,7 @@ def remove_user(username: str):
     with _state_lock:
         if username not in watchlist:
             raise HTTPException(404, f"@{username} not found")
-    _stop_worker(username)  # stops recording + worker before deleting
+    _stop_worker(username)   # stops recording + worker before deleting
     with _state_lock:
         del watchlist[username]
         _save_watchlist(watchlist)
@@ -366,12 +356,9 @@ def update_user(username: str, req: UpdateUserRequest):
         if username not in watchlist:
             raise HTTPException(404, f"@{username} not found")
         entry = watchlist[username]
-        if req.mode is not None:
-            entry["mode"] = req.mode
-        if req.interval is not None:
-            entry["interval"] = req.interval
-        if req.proxy is not None:
-            entry["proxy"] = req.proxy
+        if req.mode     is not None: entry["mode"]     = req.mode
+        if req.interval is not None: entry["interval"] = req.interval
+        if req.proxy    is not None: entry["proxy"]    = req.proxy
         _save_watchlist(watchlist)
     _stop_worker(username)
     if entry.get("mode") == "automatic":
@@ -398,7 +385,7 @@ def manual_record(username: str, background_tasks: BackgroundTasks):
             with _state_lock:
                 watchlist[username]["status"] = "recording"
                 _save_watchlist(watchlist)
-            cfg = _make_config(username, entry, Mode.MANUAL)
+            cfg      = _make_config(username, entry, Mode.MANUAL)
             recorder = StoppableTikTokRecorder(cfg, rec_stop)
             recorder.run()
         except Exception as e:
@@ -427,9 +414,7 @@ def stop_recording(username: str):
         status = watchlist[username].get("status")
 
     if status != "recording":
-        raise HTTPException(
-            409, f"@{username} is not currently recording (status: {status})"
-        )
+        raise HTTPException(409, f"@{username} is not currently recording (status: {status})")
 
     if username not in _rec_stop_events:
         raise HTTPException(500, "No active recording event found for this user")
@@ -446,7 +431,7 @@ def check_live_status(username: str):
             raise HTTPException(404, f"@{username} not found")
         entry = watchlist[username]
     try:
-        api = TikTokAPI(proxy=entry.get("proxy"), cookies=_get_cookies())
+        api     = TikTokAPI(proxy=entry.get("proxy"), cookies=_get_cookies())
         room_id = api.get_room_id_from_user(username)
         is_live = bool(room_id and api.is_room_alive(room_id))
         if is_live:
@@ -466,15 +451,13 @@ def list_recordings():
             stat = f.stat()
             # parent dir name = username (e.g. /data/recordings/flomtv/file.mp4)
             username = f.parent.name if f.parent != RECORDINGS_DIR else "unknown"
-            files.append(
-                {
-                    "filename": f.name,
-                    "username": username,
-                    "size_mb": round(stat.st_size / 1024 / 1024, 2),
-                    "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-                    "path": str(f),
-                }
-            )
+            files.append({
+                "filename":   f.name,
+                "username":   username,
+                "size_mb":    round(stat.st_size / 1024 / 1024, 2),
+                "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+                "path":       str(f),
+            })
     files.sort(key=lambda x: x["created_at"], reverse=True)
     return files
 
@@ -493,20 +476,18 @@ def get_logs(lines: int = 100):
 @app.get("/api/stats")
 def get_stats():
     with _state_lock:
-        total = len(watchlist)
-        recording = sum(1 for e in watchlist.values() if e.get("status") == "recording")
-        monitoring = sum(
-            1 for e in watchlist.values() if e.get("status") == "monitoring"
-        )
+        total      = len(watchlist)
+        recording  = sum(1 for e in watchlist.values() if e.get("status") == "recording")
+        monitoring = sum(1 for e in watchlist.values() if e.get("status") == "monitoring")
     total_recs = len(list(RECORDINGS_DIR.rglob("*.mp4")))
     rec_files = list(RECORDINGS_DIR.rglob("*.mp4"))
-    disk_mb = sum(f.stat().st_size for f in rec_files) / 1024 / 1024
+    disk_mb   = sum(f.stat().st_size for f in rec_files) / 1024 / 1024
     return {
-        "total_users": total,
+        "total_users":         total,
         "currently_recording": recording,
-        "monitoring": monitoring,
-        "total_recordings": total_recs,
-        "disk_used_mb": round(disk_mb, 1),
+        "monitoring":          monitoring,
+        "total_recordings":    total_recs,
+        "disk_used_mb":        round(disk_mb, 1),
     }
 
 
@@ -521,22 +502,17 @@ def download_recording(username: str, filename: str, inline: bool = False):
         file_path.relative_to(RECORDINGS_DIR)
     except ValueError:
         raise HTTPException(403, "Access denied")
-    disposition = (
-        f'inline; filename="{filename}"'
-        if inline
-        else f'attachment; filename="{filename}"'
-    )
+    disposition = f'inline; filename="{filename}"' if inline else f'attachment; filename="{filename}"'
     return FileResponse(
         path=str(file_path),
         filename=filename,
         media_type="video/mp4",
-        headers={"Content-Disposition": disposition},
+        headers={"Content-Disposition": disposition}
     )
 
 
 class BatchDeleteRequest(BaseModel):
     files: list[str]  # list of "username/filename"
-
 
 @app.delete("/api/recordings")
 def batch_delete_recordings(req: BatchDeleteRequest):
@@ -564,16 +540,336 @@ def batch_delete_recordings(req: BatchDeleteRequest):
     return {"deleted": deleted, "failed": failed}
 
 
+# ── TikTok Downloader ──────────────────────────────────────────────────────────
+
+def _dl_log_path(username: str) -> Path:
+    return DOWNLOADS_DIR / username / f"{username}_log.json"
+
+def _dl_error_log_path(username: str) -> Path:
+    return DOWNLOADS_DIR / username / f"{username}_errors.log"
+
+def _load_dl_log(username: str) -> dict:
+    p = _dl_log_path(username)
+    if p.exists():
+        try:
+            return json.loads(p.read_text())
+        except Exception:
+            return {}
+    return {}
+
+def _save_dl_log(username: str, log: dict):
+    p = _dl_log_path(username)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(log, indent=2))
+
+def _append_dl_error(username: str, message: str):
+    p = _dl_error_log_path(username)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "a") as f:
+        f.write(f"[{datetime.utcnow().isoformat()}] {message}\n")
+
+async def _resolve_url(url: str, client: httpx.AsyncClient) -> str:
+    """Follow redirects and return final URL."""
+    try:
+        resp = await client.get(url, follow_redirects=True, timeout=15)
+        return str(resp.url)
+    except Exception:
+        return url
+
+def _extract_video_id(url: str) -> Optional[str]:
+    """Extract numeric video/photo ID from a TikTok URL."""
+    for pattern in [r"/video/(\d+)", r"/photo/(\d+)"]:
+        m = re.search(pattern, url)
+        if m:
+            return m.group(1)
+    return None
+
+def _extract_username(url: str) -> Optional[str]:
+    """Extract @username from a TikTok URL."""
+    m = re.search(r"/@([\w.]+)/", url)
+    if m:
+        return m.group(1)
+    return None
+
+async def _get_video_id_and_username(url: str, client: httpx.AsyncClient):
+    """Resolve short URLs, extract video ID and username. Returns (video_id, username, resolved_url)."""
+    resolved = url
+    if "vm.tiktok.com" in url or "vt.tiktok.com" in url:
+        resolved = await _resolve_url(url, client)
+
+    video_id = _extract_video_id(resolved)
+    username = _extract_username(resolved)
+    return video_id, username, resolved
+
+async def _submit_tikwm_task(video_id: str, client: httpx.AsyncClient) -> Optional[str]:
+    """Submit a task to tikwm and return task_id."""
+    try:
+        resp = await client.post(
+            TIKWM_SUBMIT,
+            data={"url": video_id, "web": "1"},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("code") == 0 and data.get("data", {}).get("task_id"):
+            return data["data"]["task_id"]
+        return None
+    except Exception as e:
+        raise RuntimeError(f"tikwm submit failed: {e}")
+
+async def _poll_tikwm_result(task_id: str, client: httpx.AsyncClient, max_attempts: int = 15, delay: float = 0.5) -> Optional[dict]:
+    """Poll tikwm result endpoint until status==2 and size>0."""
+    for attempt in range(max_attempts):
+        try:
+            resp = await client.get(
+                TIKWM_RESULT,
+                params={"task_id": task_id},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("code") == 0 and data.get("data"):
+                detail = data["data"]
+                status = detail.get("status")
+                size = detail.get("detail", {}).get("size", 0)
+                if status == 2 and size and int(size) > 0:
+                    return detail.get("detail")
+        except Exception:
+            pass
+        await asyncio.sleep(delay)
+    return None
+
+async def _download_file(url: str, dest: Path, client: httpx.AsyncClient):
+    """Stream download a file to disk."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    async with client.stream("GET", url, timeout=120, follow_redirects=True) as resp:
+        resp.raise_for_status()
+        with open(dest, "wb") as f:
+            async for chunk in resp.aiter_bytes(8192):
+                f.write(chunk)
+
+async def _process_single_url(url: str, client: httpx.AsyncClient) -> dict:
+    """
+    Process one TikTok URL. Returns a result dict with keys:
+      url, status (skipped|downloaded|error), reason, video_id, username, filename
+    """
+    result = {"url": url, "status": "error", "reason": "", "video_id": None, "username": None, "filename": None}
+
+    try:
+        video_id, username, resolved_url = await _get_video_id_and_username(url, client)
+
+        if not video_id:
+            result["reason"] = "Could not extract video ID from URL"
+            return result
+
+        if not username:
+            result["reason"] = "Could not extract username from URL"
+            return result
+
+        result["video_id"] = video_id
+        result["username"] = username
+
+        # check duplicate
+        log = _load_dl_log(username)
+        if video_id in log:
+            result["status"] = "skipped"
+            result["reason"] = f"Already downloaded on {log[video_id]['downloaded_at']}"
+            return result
+
+        # submit tikwm task
+        try:
+            task_id = await _submit_tikwm_task(video_id, client)
+        except RuntimeError as e:
+            result["reason"] = str(e)
+            _append_dl_error(username, f"[{video_id}] {e}")
+            return result
+
+        if not task_id:
+            result["reason"] = "tikwm did not return a task_id (video may not exist or is private)"
+            _append_dl_error(username, f"[{video_id}] no task_id returned")
+            return result
+
+        # poll for result
+        detail = await _poll_tikwm_result(task_id, client)
+        if not detail:
+            result["reason"] = "tikwm task did not complete after 15 attempts (video may be too large or unavailable)"
+            _append_dl_error(username, f"[{video_id}] task {task_id} did not complete")
+            return result
+
+        play_url = detail.get("play_url")
+        if not play_url:
+            result["reason"] = "tikwm returned no play_url for this video"
+            _append_dl_error(username, f"[{video_id}] no play_url in response")
+            return result
+
+        # use username from tikwm response if available (more reliable)
+        api_username = detail.get("author", {}).get("unique_id") or username
+
+        filename = f"{api_username}_{video_id}.mp4"
+        dest = DOWNLOADS_DIR / api_username / filename
+
+        try:
+            await _download_file(play_url, dest, client)
+        except Exception as e:
+            result["reason"] = f"Download failed: {e}"
+            _append_dl_error(api_username, f"[{video_id}] download error: {e}")
+            if dest.exists():
+                dest.unlink()
+            return result
+
+        # write log entry
+        log = _load_dl_log(api_username)
+        log[video_id] = {
+            "video_id":      video_id,
+            "original_url":  url,
+            "filename":      filename,
+            "downloaded_at": datetime.utcnow().isoformat(),
+        }
+        _save_dl_log(api_username, log)
+
+        result["status"]   = "downloaded"
+        result["username"] = api_username
+        result["filename"] = filename
+        result["reason"]   = "OK"
+        return result
+
+    except Exception as e:
+        result["reason"] = f"Unexpected error: {e}"
+        if result.get("username"):
+            _append_dl_error(result["username"], f"[{result.get('video_id','?')}] unexpected: {e}")
+        return result
+
+
+class DownloadRequest(BaseModel):
+    urls: list[str]
+
+@app.post("/api/downloads")
+async def submit_downloads(req: DownloadRequest):
+    """Accept one or more TikTok URLs and download them."""
+    urls = [u.strip() for u in req.urls if u.strip()]
+    if not urls:
+        raise HTTPException(400, "No URLs provided")
+
+    # deduplicate within the batch itself
+    seen_in_batch: set[str] = set()
+    results = []
+
+    async with httpx.AsyncClient(
+        headers={"User-Agent": "Mozilla/5.0"},
+        follow_redirects=True,
+    ) as client:
+        for url in urls:
+            # quick batch-level duplicate check before full processing
+            # extract ID cheaply first (may still be short URL, handled inside)
+            cheap_id = _extract_video_id(url)
+            if cheap_id and cheap_id in seen_in_batch:
+                results.append({
+                    "url": url, "status": "skipped",
+                    "reason": "Duplicate URL in this batch",
+                    "video_id": cheap_id, "username": None, "filename": None,
+                })
+                continue
+
+            r = await _process_single_url(url, client)
+            results.append(r)
+
+            if r.get("video_id"):
+                seen_in_batch.add(r["video_id"])
+
+    downloaded = [r for r in results if r["status"] == "downloaded"]
+    skipped    = [r for r in results if r["status"] == "skipped"]
+    errors     = [r for r in results if r["status"] == "error"]
+
+    return {
+        "summary": {
+            "total":      len(results),
+            "downloaded": len(downloaded),
+            "skipped":    len(skipped),
+            "errors":     len(errors),
+        },
+        "results": results,
+    }
+
+
+@app.get("/api/downloads")
+def list_downloads():
+    """List all downloaded files grouped by username."""
+    files = []
+    for f in DOWNLOADS_DIR.rglob("*.mp4"):
+        stat = f.stat()
+        username = f.parent.name
+        files.append({
+            "filename":   f.name,
+            "username":   username,
+            "size_mb":    round(stat.st_size / 1024 / 1024, 2),
+            "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+        })
+    files.sort(key=lambda x: x["created_at"], reverse=True)
+    return files
+
+
+@app.get("/api/downloads/{username}/{filename}")
+def serve_download(username: str, filename: str, inline: bool = False):
+    """Serve a downloaded file."""
+    file_path = DOWNLOADS_DIR / username / filename
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(404, "File not found")
+    try:
+        file_path.relative_to(DOWNLOADS_DIR)
+    except ValueError:
+        raise HTTPException(403, "Access denied")
+    disposition = f'inline; filename="{filename}"' if inline else f'attachment; filename="{filename}"'
+    return FileResponse(path=str(file_path), filename=filename, media_type="video/mp4",
+                        headers={"Content-Disposition": disposition})
+
+
+class BatchDeleteDownloadsRequest(BaseModel):
+    files: list[str]  # "username/filename"
+
+@app.delete("/api/downloads")
+def batch_delete_downloads(req: BatchDeleteDownloadsRequest):
+    """Delete downloaded files and remove from per-user log."""
+    deleted, failed = [], []
+    for entry in req.files:
+        try:
+            parts = entry.split("/", 1)
+            if len(parts) != 2:
+                failed.append({"file": entry, "error": "Invalid path"})
+                continue
+            username, filename = parts
+            file_path = DOWNLOADS_DIR / username / filename
+            file_path.relative_to(DOWNLOADS_DIR)
+
+            if not file_path.exists():
+                failed.append({"file": entry, "error": "File not found"})
+                continue
+
+            # remove from log by matching filename
+            log = _load_dl_log(username)
+            video_id_to_remove = next(
+                (vid for vid, meta in log.items() if meta.get("filename") == filename),
+                None
+            )
+            if video_id_to_remove:
+                del log[video_id_to_remove]
+                _save_dl_log(username, log)
+
+            file_path.unlink()
+            deleted.append(entry)
+        except ValueError:
+            failed.append({"file": entry, "error": "Access denied"})
+        except Exception as e:
+            failed.append({"file": entry, "error": str(e)})
+    return {"deleted": deleted, "failed": failed}
+
+
 # ── static / frontend ──────────────────────────────────────────────────────────
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
 
 @app.get("/")
 def index():
     return FileResponse(str(STATIC_DIR / "index.html"))
 
-
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
