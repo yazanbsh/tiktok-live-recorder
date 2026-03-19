@@ -938,7 +938,11 @@
         <div id="dl-results" style="display:none;">
           <div class="section-header" style="margin-bottom:10px;">
             <span class="section-title" style="font-size:12px;">Batch Progress</span>
-            <button class="action-btn" onclick="document.getElementById('dl-results').style.display='none'" style="margin-left:auto;">✕ Clear</button>
+            <div style="display:flex;gap:6px;margin-left:auto;" onclick="event.stopPropagation()">
+              <button class="action-btn" onclick="dlClearByStatus('downloaded')" title="Clear completed">✓ Clear done</button>
+              <button class="action-btn" onclick="dlClearByStatus('skipped')" title="Clear skipped">↷ Clear skipped</button>
+              <button class="action-btn" style="color:var(--accent);" onclick="dlClearByStatus('error')" title="Clear failed">✕ Clear failed</button>
+            </div>
             <div id="dl-progress-bar-wrap" style="flex:1;margin:0 16px;height:4px;background:var(--border2);border-radius:2px;overflow:hidden;display:none;">
               <div id="dl-progress-bar" style="height:100%;width:0%;background:var(--green);transition:width 0.3s;border-radius:2px;"></div>
             </div>
@@ -1699,6 +1703,22 @@ function handleUrlFileDrop(event) {
     toast(`Loaded ${text.split('\n').filter(Boolean).length} lines from ${file.name}`, 'info');
   };
   reader.readAsText(file);
+}
+
+function dlClearByStatus(status) {
+  Object.keys(_dlRows).forEach(id => {
+    if (_dlRows[id].status === status) {
+      delete _dlRows[id];
+      const el = document.getElementById(`dlrow-${id}`);
+      if (el) el.remove();
+    }
+  });
+  // hide results area if nothing left
+  const list = document.getElementById('dl-result-list');
+  if (list && !list.children.length) {
+    document.getElementById('dl-results').style.display = 'none';
+  }
+  _dlUpdateSummary();
 }
 
 async function submitDownloads() {
