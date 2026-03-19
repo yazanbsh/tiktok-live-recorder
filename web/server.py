@@ -1037,9 +1037,9 @@ def resume_queue_item(item_id: str):
         item = next((i for i in _dl_queue if i["id"] == item_id), None)
         if not item:
             raise HTTPException(404, "Queue item not found")
-        if item["status"] != "interrupted":
+        if item["status"] not in ("interrupted", "error"):
             raise HTTPException(
-                409, f"Item status is '{item['status']}', not interrupted"
+                409, f"Cannot resume item with status '{item['status']}'"
             )
         item["status"] = "waiting"
         item["reason"] = ""
