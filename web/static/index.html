@@ -1710,20 +1710,14 @@ function handleUrlFileDrop(event) {
   reader.readAsText(file);
 }
 
-function dlClearByStatus(status) {
-  Object.keys(_dlRows).forEach(id => {
-    if (_dlRows[id].status === status) {
-      delete _dlRows[id];
-      const el = document.getElementById(`dlrow-${id}`);
-      if (el) el.remove();
-    }
-  });
-  // hide results area if nothing left
-  const list = document.getElementById('dl-result-list');
-  if (list && !list.children.length) {
-    document.getElementById('dl-results').style.display = 'none';
-  }
-  _dlUpdateSummary();
+async function dlClearByStatus(status) {
+  try {
+    await apiFetch('/api/downloads/queue', {
+      method: 'DELETE',
+      body: JSON.stringify({ statuses: [status] }),
+    });
+    // UI update handled by SSE broadcast (status: removed)
+  } catch(e) { toast(`Error: ${e.message}`, 'error'); }
 }
 
 async function dlResumeQueue() {
@@ -1736,9 +1730,9 @@ async function dlResumeQueue() {
 }
 
 function _dlCheckResumeBtn() {
-  const hasWaiting = Object.values(_dlRows).some(i => i.status === 'waiting');
+  const hasResumable = Object.values(_dlRows).some(i => i.status === 'waiting' || i.status === 'interrupted');
   const btn = document.getElementById('dl-resume-queue-btn');
-  if (btn) btn.style.display = hasWaiting ? '' : 'none';
+  if (btn) btn.style.display = hasResumable ? '' : 'none';
 }
 
 async function submitDownloads() {
