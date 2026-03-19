@@ -919,10 +919,13 @@
 
         <!-- Input area -->
         <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px;">
-          <textarea id="dl-urls-input" placeholder="Paste one or more TikTok URLs, one per line..."
+          <textarea id="dl-urls-input" placeholder="Paste one or more TikTok URLs, one per line... or drag &amp; drop a .txt file"
             style="width:100%;min-height:100px;background:var(--card);border:1px solid var(--border2);border-radius:var(--radius);
                    color:var(--text);font-family:var(--mono);font-size:11px;padding:12px;resize:vertical;
-                   box-sizing:border-box;outline:none;"></textarea>
+                   box-sizing:border-box;outline:none;"
+            ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
+            ondragleave="this.style.borderColor='var(--border2)'"
+            ondrop="handleUrlFileDrop(event)"></textarea>
           <div style="display:flex;gap:10px;align-items:center;">
             <button class="btn btn-primary" id="dl-submit-btn" onclick="submitDownloads()">↓ Download</button>
             <button class="btn btn-ghost" onclick="document.getElementById('dl-urls-input').value=''">Clear</button>
@@ -1475,6 +1478,25 @@ async function loadRecordings() {
 }
 
 // ── Downloads ────────────────────────────────────────────────────────────────
+function handleUrlFileDrop(event) {
+  event.preventDefault();
+  const ta = document.getElementById('dl-urls-input');
+  ta.style.borderColor = 'var(--border2)';
+  const file = event.dataTransfer.files[0];
+  if (!file) return;
+  if (!file.name.endsWith('.txt')) {
+    toast('Only .txt files are supported', 'error');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = e => {
+    const text = e.target.result.trim();
+    ta.value = ta.value ? ta.value + '\n' + text : text;
+    toast(`Loaded ${text.split('\n').filter(Boolean).length} lines from ${file.name}`, 'info');
+  };
+  reader.readAsText(file);
+}
+
 async function submitDownloads() {
   const input = document.getElementById('dl-urls-input').value.trim();
   if (!input) { toast('Please enter at least one URL', 'error'); return; }
