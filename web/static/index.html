@@ -938,6 +938,7 @@
         <div id="dl-results" style="display:none;">
           <div class="section-header" style="margin-bottom:10px;">
             <span class="section-title" style="font-size:12px;">Batch Progress</span>
+            <button class="action-btn" onclick="document.getElementById('dl-results').style.display='none'" style="margin-left:auto;">✕ Clear</button>
             <div id="dl-progress-bar-wrap" style="flex:1;margin:0 16px;height:4px;background:var(--border2);border-radius:2px;overflow:hidden;display:none;">
               <div id="dl-progress-bar" style="height:100%;width:0%;background:var(--green);transition:width 0.3s;border-radius:2px;"></div>
             </div>
@@ -1354,6 +1355,42 @@ async function batchDelete() {
 // collapsed state per username (in-memory)
 const collapsedSections = {};
 
+// sort state per section key: { key: 'date'|'name'|'size', dir: 1|-1 }
+const _sectionSort = {};
+
+function _sortFiles(files, key, dir) {
+  return files.sort((a, b) => {
+    let va, vb;
+    if (key === 'date') { va = a.created_at; vb = b.created_at; }
+    else if (key === 'size') { va = a.size_mb; vb = b.size_mb; }
+    else { va = a.filename.toLowerCase(); vb = b.filename.toLowerCase(); }
+    return va < vb ? -dir : va > vb ? dir : 0;
+  });
+}
+
+function _sortBtnHtml(sectionKey, current, reloadFn) {
+  return ['date','name','size'].map(k => {
+    const active = current.key === k;
+    const arrow  = active ? (current.dir === -1 ? ' ↓' : ' ↑') : '';
+    const style  = active
+      ? 'color:var(--text);border-color:var(--text2);'
+      : 'color:var(--muted);border-color:var(--border);';
+    return `<button class="rec-btn" style="padding:2px 6px;font-size:9px;${style}"
+      onclick="_cycleSort('${sectionKey}','${k}','${reloadFn}')">${k}${arrow}</button>`;
+  }).join('');
+}
+
+function _cycleSort(sectionKey, key, reloadFn) {
+  const cur = _sectionSort[sectionKey] || {key:'date', dir:-1};
+  if (cur.key === key) {
+    _sectionSort[sectionKey] = {key, dir: cur.dir * -1};
+  } else {
+    _sectionSort[sectionKey] = {key, dir: -1};
+  }
+  // preserve collapse state then reload
+  window[reloadFn]();
+}
+
 function toggleSection(username) {
   collapsedSections[username] = !collapsedSections[username];
   const sec = document.querySelector(`.rec-section[data-user="${username}"]`);
@@ -1438,7 +1475,11 @@ async function loadRecordings() {
     let html = '';
     for (const [username, recs] of Object.entries(groups)) {
       const totalMB = recs.reduce((s, f) => s + f.size_mb, 0).toFixed(1);
+      // collapsed by default unless user explicitly opened it
+      if (!(username in collapsedSections)) collapsedSections[username] = true;
       const isCollapsed = !!collapsedSections[username];
+      const recSort = _sectionSort['rec_' + username] || {key:'date', dir:-1};
+      const sortedRecs = _sortFiles([...recs], recSort.key, recSort.dir);
       html += `<div class="rec-section${isCollapsed ? ' collapsed' : ''}" data-user="${username}">
         <div class="rec-section-header" onclick="toggleSection('${username}')">
           <span class="rec-section-arrow">▼</span>
@@ -1452,9 +1493,12 @@ async function loadRecordings() {
             <span>${recs.length} clip${recs.length !== 1 ? 's' : ''}</span>
             <span>${totalMB} MB</span>
           </span>
+          <span onclick="event.stopPropagation()" style="display:flex;gap:4px;margin-left:8px;">
+            ${_sortBtnHtml('rec_' + username, recSort, 'loadRecordings')}
+          </span>
         </div>
         <div class="rec-section-body">`;
-      for (const f of recs) {
+      for (const f of sortedRecs) {
         const key = `${f.username}/${f.filename}`;
         const isSelected = !!selectedFiles[key];
         html += `<div class="rec-card${isSelected ? ' selected' : ''}" data-key="${key}"
@@ -1626,8 +1670,13 @@ async function loadDownloadsList() {
     let html = '';
     for (const [username, items] of Object.entries(groups)) {
       const totalMB = items.reduce((s, f) => s + f.size_mb, 0).toFixed(1);
-      html += `<div class="rec-section" data-user="dl_${username}">
-        <div class="rec-section-header" onclick="toggleSection('dl_${username}')">
+      const dlKey = 'dl_' + username;
+      if (!(dlKey in collapsedSections)) collapsedSections[dlKey] = true;
+      const isDlCollapsed = !!collapsedSections[dlKey];
+      const dlSort = _sectionSort[dlKey] || {key:'date', dir:-1};
+      const sortedItems = _sortFiles([...items], dlSort.key, dlSort.dir);
+      html += `<div class="rec-section${isDlCollapsed ? ' collapsed' : ''}" data-user="${dlKey}">
+        <div class="rec-section-header" onclick="toggleSection('${dlKey}')">
           <span class="rec-section-arrow">▼</span>
           <span class="rec-section-title">
             <a href="https://tiktok.com/@${username}" target="_blank" onclick="event.stopPropagation()">@${username}</a>
@@ -1636,9 +1685,12 @@ async function loadDownloadsList() {
             <span>${items.length} file${items.length !== 1 ? 's' : ''}</span>
             <span>${totalMB} MB</span>
           </span>
+          <span onclick="event.stopPropagation()" style="display:flex;gap:4px;margin-left:8px;">
+            ${_sortBtnHtml(dlKey, dlSort, 'loadDownloadsList')}
+          </span>
         </div>
         <div class="rec-section-body">`;
-      for (const f of items) {
+      for (const f of sortedItems) {
         html += `<div class="rec-card">
           <div class="rec-card-top">
             <a class="rec-filename" href="/api/downloads/${f.username}/${encodeURIComponent(f.filename)}?inline=true"
