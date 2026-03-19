@@ -931,6 +931,10 @@
           <div style="display:flex;gap:10px;align-items:center;">
             <button class="btn btn-primary" id="dl-submit-btn" onclick="submitDownloads()">↓ Download</button>
             <button class="btn btn-ghost" onclick="document.getElementById('dl-urls-input').value=''">Clear</button>
+            <button class="btn" id="dl-resume-queue-btn" onclick="dlResumeQueue()"
+              style="display:none;background:rgba(0,229,160,0.15);color:var(--green);border:1px solid rgba(0,229,160,0.3);">
+              ▶ Resume queue
+            </button>
           </div>
         </div>
 
@@ -1658,6 +1662,7 @@ function _dlConnectSSE() {
         }
       }
       _dlUpdateSummary();
+      _dlCheckResumeBtn();
       return;
     }
 
@@ -1721,6 +1726,21 @@ function dlClearByStatus(status) {
   _dlUpdateSummary();
 }
 
+async function dlResumeQueue() {
+  try {
+    // just submit empty list — backend will start worker and pick up waiting items
+    await apiFetch('/api/downloads/resume-queue', { method: 'POST' });
+    document.getElementById('dl-resume-queue-btn').style.display = 'none';
+    toast('Queue resumed', 'info');
+  } catch(e) { toast(`Error: ${e.message}`, 'error'); }
+}
+
+function _dlCheckResumeBtn() {
+  const hasWaiting = Object.values(_dlRows).some(i => i.status === 'waiting');
+  const btn = document.getElementById('dl-resume-queue-btn');
+  if (btn) btn.style.display = hasWaiting ? '' : 'none';
+}
+
 async function submitDownloads() {
   const input = document.getElementById('dl-urls-input').value.trim();
   if (!input) { toast('Please enter at least one URL', 'error'); return; }
@@ -1738,6 +1758,7 @@ async function submitDownloads() {
     });
     if (res.queued > 0) {
       toast(`${res.queued} URL${res.queued !== 1 ? 's' : ''} added to queue`, 'info');
+      document.getElementById('dl-resume-queue-btn').style.display = 'none';
     } else {
       toast('All URLs already in queue or duplicate', 'info');
     }
