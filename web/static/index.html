@@ -1531,6 +1531,157 @@ async function loadRecordings() {
 }
 
 // ── Downloads ────────────────────────────────────────────────────────────────
+
+// queue rows keyed by item id
+const _dlRows = {};
+let _sseSource = null;
+
+function _dlStatusCfg(status) {
+  return {
+    waiting:     { color: 'var(--muted)',   icon: '○', label: 'waiting',     pulse: false },
+    processing:  { color: 'var(--yellow)',  icon: '◌', label: 'processing',  pulse: true  },
+    downloaded:  { color: 'var(--green)',   icon: '✓', label: 'downloaded',  pulse: false },
+    skipped:     { color: 'var(--yellow)',  icon: '↷', label: 'skipped',     pulse: false },
+    error:       { color: 'var(--accent)',  icon: '✕', label: 'failed',      pulse: false },
+    interrupted: { color: 'var(--muted)',   icon: '⊘', label: 'interrupted', pulse: false },
+    removed:     { color: 'var(--muted)',   icon: '—', label: 'removed',     pulse: false },
+  }[status] || { color: 'var(--muted)', icon: '○', label: status, pulse: false };
+}
+
+function _dlRowHtml(item) {
+  const cfg   = _dlStatusCfg(item.status);
+  const pulse = cfg.pulse ? 'animation:pulse-dot 1s infinite;' : '';
+  const url   = item.url || '';
+
+  let actions = '';
+  if (item.status === 'waiting') {
+    actions = `<button class="rec-btn rec-btn-del" style="padding:2px 7px;font-size:10px;"
+      onclick="dlRemoveQueued('${item.id}')">✕</button>`;
+  } else if (item.status === 'interrupted') {
+    actions = `<button class="rec-btn rec-btn-play" style="padding:2px 7px;font-size:10px;"
+      onclick="dlResume('${item.id}')">▶ Resume</button>`;
+  } else if (item.status === 'error') {
+    actions = `<button class="rec-btn rec-btn-play" style="padding:2px 7px;font-size:10px;"
+      onclick="dlRetry('${escHtml(url)}')">↺ Retry</button>`;
+  }
+
+  const reason = (item.reason && item.status !== 'waiting' && item.status !== 'processing')
+    ? `<span style="color:var(--muted);font-size:10px;max-width:200px;overflow:hidden;
+         text-overflow:ellipsis;white-space:nowrap;flex-shrink:0;" title="${escHtml(item.reason)}">${escHtml(item.reason)}</span>`
+    : '';
+
+  return `<div id="dlrow-${item.id}" style="font-family:var(--mono);font-size:11px;display:flex;
+      gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">
+    <span style="color:${cfg.color};flex-shrink:0;${pulse}">${cfg.icon}</span>
+    <span style="color:var(--text2);word-break:break-all;flex:1;font-size:10px;">${escHtml(url)}</span>
+    <span style="color:${cfg.color};flex-shrink:0;white-space:nowrap;">${cfg.label}</span>
+    ${reason}
+    ${actions}
+  </div>`;
+}
+
+function _dlUpdateRow(item) {
+  _dlRows[item.id] = item;
+  const el = document.getElementById(`dlrow-${item.id}`);
+  if (el) {
+    el.outerHTML = _dlRowHtml(item);
+  } else {
+    // new item — append to list
+    const list = document.getElementById('dl-result-list');
+    if (list) {
+      list.insertAdjacentHTML('beforeend', _dlRowHtml(item));
+      document.getElementById('dl-results').style.display = 'block';
+    }
+  }
+  _dlUpdateSummary();
+}
+
+function _dlUpdateSummary() {
+  const items  = Object.values(_dlRows);
+  const done   = items.filter(i => i.status === 'downloaded').length;
+  const skip   = items.filter(i => i.status === 'skipped').length;
+  const err    = items.filter(i => i.status === 'error').length;
+  const wait   = items.filter(i => i.status === 'waiting').length;
+  const proc   = items.filter(i => i.status === 'processing').length;
+  const inter  = items.filter(i => i.status === 'interrupted').length;
+  const total  = items.length;
+  const finished = done + skip + err;
+
+  const pct = total > 0 ? Math.round((finished / total) * 100) : 0;
+  const bar = document.getElementById('dl-progress-bar');
+  const lbl = document.getElementById('dl-progress-label');
+  const barWrap = document.getElementById('dl-progress-bar-wrap');
+  if (bar) {
+    barWrap.style.display = total > 0 ? 'block' : 'none';
+    bar.style.width = pct + '%';
+    bar.style.background = err > 0 ? 'var(--accent)' : 'var(--green)';
+  }
+  if (lbl) lbl.textContent = total > 0 ? `${finished}/${total}` : '';
+
+  const sumEl = document.getElementById('dl-summary');
+  if (sumEl && total > 0) {
+    sumEl.innerHTML =
+      `<span style="color:var(--green)">✓ ${done}</span> &nbsp;` +
+      `<span style="color:var(--yellow)">↷ ${skip}</span> &nbsp;` +
+      `<span style="color:var(--accent)">✕ ${err}</span>` +
+      (wait + proc > 0 ? ` &nbsp;<span style="color:var(--muted)">○ ${wait + proc} pending</span>` : '') +
+      (inter > 0 ? ` &nbsp;<span style="color:var(--muted)">⊘ ${inter} interrupted</span>` : '');
+  }
+}
+
+function _dlConnectSSE() {
+  if (_sseSource) { _sseSource.close(); _sseSource = null; }
+  const es = new EventSource('/api/downloads/stream');
+  _sseSource = es;
+
+  es.onmessage = e => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'ping') return;
+
+    if (msg.type === 'snapshot') {
+      // load full queue state on connect
+      msg.items.forEach(item => {
+        if (item.status === 'removed') return;
+        _dlRows[item.id] = item;
+      });
+      // render all rows
+      const list = document.getElementById('dl-result-list');
+      if (list) {
+        const activeItems = Object.values(_dlRows).filter(i => i.status !== 'removed');
+        if (activeItems.length > 0) {
+          list.innerHTML = activeItems.map(_dlRowHtml).join('');
+          document.getElementById('dl-results').style.display = 'block';
+        }
+      }
+      _dlUpdateSummary();
+      return;
+    }
+
+    if (msg.type === 'update') {
+      if (msg.status === 'removed') {
+        delete _dlRows[msg.id];
+        const el = document.getElementById(`dlrow-${msg.id}`);
+        if (el) el.remove();
+        _dlUpdateSummary();
+        return;
+      }
+      const existing = _dlRows[msg.id] || {};
+      _dlUpdateRow({ ...existing, ...msg });
+      if (msg.status === 'downloaded') {
+        loadDownloadsList();
+      }
+    }
+  };
+
+  es.onerror = () => {
+    // reconnect after 3s
+    setTimeout(_dlConnectSSE, 3000);
+  };
+}
+
+// start SSE connection
+_dlConnectSSE();
+
 function handleUrlFileDrop(event) {
   event.preventDefault();
   const ta = document.getElementById('dl-urls-input');
@@ -1550,41 +1701,6 @@ function handleUrlFileDrop(event) {
   reader.readAsText(file);
 }
 
-function retryDownload(url) {
-  document.getElementById('dl-urls-input').value = url;
-  submitDownloads();
-}
-
-function _dlRowHtml(url, status, reason, idx) {
-  const cfg = {
-    waiting:    { color: 'var(--muted)',   icon: '○', label: 'waiting'     },
-    processing: { color: 'var(--yellow)',  icon: '◌', label: 'processing'  },
-    downloaded: { color: 'var(--green)',   icon: '✓', label: 'downloaded'  },
-    skipped:    { color: 'var(--yellow)',  icon: '↷', label: 'skipped'     },
-    error:      { color: 'var(--accent)',  icon: '✕', label: 'failed'      },
-  }[status] || { color: 'var(--muted)', icon: '○', label: status };
-
-  const retryBtn = status === 'error'
-    ? `<button class="rec-btn rec-btn-play" style="padding:2px 7px;font-size:10px;"
-         onclick="retryDownload(${JSON.stringify(url)})">↺ Retry</button>`
-    : '';
-
-  const pulse = status === 'processing'
-    ? 'animation:pulse-dot 1s infinite;' : '';
-
-  return `<div id="dl-row-${idx}" style="font-family:var(--mono);font-size:11px;display:flex;gap:8px;
-      align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">
-    <span style="color:${cfg.color};flex-shrink:0;${pulse}">${cfg.icon}</span>
-    <span style="color:var(--text2);word-break:break-all;flex:1;font-size:10px;">${url}</span>
-    <span style="color:${cfg.color};flex-shrink:0;white-space:nowrap;">${cfg.label}</span>
-    ${reason && status !== 'waiting' && status !== 'processing'
-      ? `<span style="color:var(--muted);flex-shrink:0;max-width:220px;overflow:hidden;text-overflow:ellipsis;
-           white-space:nowrap;font-size:10px;" title="${reason}">${reason}</span>`
-      : ''}
-    ${retryBtn}
-  </div>`;
-}
-
 async function submitDownloads() {
   const input = document.getElementById('dl-urls-input').value.trim();
   if (!input) { toast('Please enter at least one URL', 'error'); return; }
@@ -1592,64 +1708,48 @@ async function submitDownloads() {
   const urls = input.split('\n').map(u => u.trim()).filter(Boolean);
   const btn  = document.getElementById('dl-submit-btn');
   btn.disabled = true;
-  btn.textContent = '⏳ Processing...';
 
-  // clear textarea
   document.getElementById('dl-urls-input').value = '';
-
-  // show progress area with all rows as "waiting"
-  const resultsList = document.getElementById('dl-result-list');
-  resultsList.innerHTML = urls.map((url, i) => _dlRowHtml(url, 'waiting', '', i)).join('');
-  document.getElementById('dl-summary').innerHTML = '';
-  document.getElementById('dl-results').style.display = 'block';
-
-  // show progress bar
-  const barWrap = document.getElementById('dl-progress-bar-wrap');
-  const bar     = document.getElementById('dl-progress-bar');
-  const label   = document.getElementById('dl-progress-label');
-  barWrap.style.display = 'block';
-  bar.style.width = '0%';
-  label.textContent = `0 / ${urls.length}`;
-
-  // scroll into view
-  document.getElementById('dl-results').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   try {
     const res = await apiFetch('/api/downloads', {
       method: 'POST',
       body: JSON.stringify({ urls }),
     });
-
-    // update rows as results come in
-    res.results.forEach((r, i) => {
-      const el = document.getElementById(`dl-row-${i}`);
-      if (el) el.outerHTML = _dlRowHtml(r.url, r.status, r.reason, i);
-      // update progress bar incrementally
-      bar.style.width = `${Math.round(((i + 1) / urls.length) * 100)}%`;
-      label.textContent = `${i + 1} / ${urls.length}`;
-    });
-
-    bar.style.width = '100%';
-    bar.style.background = res.summary.errors > 0 ? 'var(--accent)' : 'var(--green)';
-
-    // summary line
-    const s = res.summary;
-    document.getElementById('dl-summary').innerHTML =
-      `<span style="color:var(--green)">✓ ${s.downloaded} downloaded</span> &nbsp;` +
-      `<span style="color:var(--yellow)">↷ ${s.skipped} skipped</span> &nbsp;` +
-      `<span style="color:var(--accent)">✕ ${s.errors} failed</span>`;
-
-    if (s.downloaded > 0) loadDownloadsList();
-    if (s.downloaded > 0) toast(`Downloaded ${s.downloaded} video${s.downloaded !== 1 ? 's' : ''}`, 'success');
-    if (s.errors > 0) toast(`${s.errors} failed — check results`, 'error');
-    if (s.skipped > 0 && s.downloaded === 0 && s.errors === 0) toast(`All ${s.skipped} already downloaded`, 'info');
-
+    if (res.queued > 0) {
+      toast(`${res.queued} URL${res.queued !== 1 ? 's' : ''} added to queue`, 'info');
+    } else {
+      toast('All URLs already in queue or duplicate', 'info');
+    }
   } catch(e) {
     toast(`Error: ${e.message}`, 'error');
   } finally {
     btn.disabled = false;
-    btn.textContent = '↓ Download';
   }
+}
+
+async function dlRemoveQueued(itemId) {
+  try {
+    await apiFetch(`/api/downloads/queue/${itemId}`, { method: 'DELETE' });
+  } catch(e) { toast(`Error: ${e.message}`, 'error'); }
+}
+
+async function dlResume(itemId) {
+  try {
+    await apiFetch(`/api/downloads/queue/${itemId}/resume`, { method: 'POST' });
+    toast('Item re-queued', 'info');
+  } catch(e) { toast(`Error: ${e.message}`, 'error'); }
+}
+
+async function dlRetry(url) {
+  try {
+    const res = await apiFetch('/api/downloads', {
+      method: 'POST',
+      body: JSON.stringify({ urls: [url] }),
+    });
+    if (res.queued > 0) toast('Added to end of queue', 'info');
+    else toast('Already in queue', 'info');
+  } catch(e) { toast(`Error: ${e.message}`, 'error'); }
 }
 
 async function loadDownloadsList() {
@@ -1658,10 +1758,9 @@ async function loadDownloadsList() {
   try {
     const files = await apiFetch('/api/downloads');
     if (!files.length) {
-      grid.innerHTML = `<div class="empty-state"><div class="empty-icon">↓</div><div class="empty-text">No downloads yet.</div></div>`;
+      grid.innerHTML = `<div class="empty-state"><div class="empty-icon">▤</div><div class="empty-text">No downloads yet.</div></div>`;
       return;
     }
-    // group by username
     const groups = {};
     for (const f of files) {
       if (!groups[f.username]) groups[f.username] = [];
