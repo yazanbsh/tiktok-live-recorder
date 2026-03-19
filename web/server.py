@@ -34,13 +34,13 @@ from core.tiktok_api import TikTokAPI
 from utils.video_management import VideoManagement
 
 # ── paths ──────────────────────────────────────────────────────────────────────
-BASE_DIR       = Path(__file__).parent
-STATIC_DIR     = BASE_DIR / "static"
-DATA_DIR       = Path(os.environ.get("DATA_DIR", str(BASE_DIR.parent / "data")))
+BASE_DIR = Path(__file__).parent
+STATIC_DIR = BASE_DIR / "static"
+DATA_DIR = Path(os.environ.get("DATA_DIR", str(BASE_DIR.parent / "data")))
 WATCHLIST_FILE = DATA_DIR / "watchlist.json"
 RECORDINGS_DIR = DATA_DIR / "recordings"
-DOWNLOADS_DIR  = DATA_DIR / "downloads"
-LOG_FILE       = DATA_DIR / "logs" / "tiktok-recorder.log"
+DOWNLOADS_DIR = DATA_DIR / "downloads"
+LOG_FILE = DATA_DIR / "logs" / "tiktok-recorder.log"
 
 # ensure all data subdirs exist
 (DATA_DIR / "recordings").mkdir(parents=True, exist_ok=True)
@@ -56,6 +56,7 @@ app = FastAPI(title="TikTok Live Recorder", version="1.0.0")
 # ── in-memory state ────────────────────────────────────────────────────────────
 _state_lock = threading.Lock()
 
+
 def _load_watchlist() -> dict:
     if WATCHLIST_FILE.exists():
         try:
@@ -64,37 +65,42 @@ def _load_watchlist() -> dict:
             pass
     return {}
 
+
 def _save_watchlist(data: dict):
     WATCHLIST_FILE.write_text(json.dumps(data, indent=2))
+
 
 watchlist: dict = _load_watchlist()
 
 # { username -> Thread }  — the outer monitoring/polling loop
-_workers:         dict[str, threading.Thread] = {}
+_workers: dict[str, threading.Thread] = {}
 # { username -> Event }   — set to stop the whole worker (monitoring + recording)
-_stop_events:     dict[str, threading.Event]  = {}
+_stop_events: dict[str, threading.Event] = {}
 # { username -> Event }   — set to stop only the active recording, keep monitoring
-_rec_stop_events: dict[str, threading.Event]  = {}
+_rec_stop_events: dict[str, threading.Event] = {}
 
 
 # ── pydantic models ────────────────────────────────────────────────────────────
 
+
 class AddUserRequest(BaseModel):
-    username:  str
-    mode:      str           = "automatic"
-    interval:  int           = 5
-    proxy:     Optional[str] = None
-    output:    Optional[str] = None
-    duration:  Optional[int] = None
-    bitrate:   Optional[str] = None
+    username: str
+    mode: str = "automatic"
+    interval: int = 5
+    proxy: Optional[str] = None
+    output: Optional[str] = None
+    duration: Optional[int] = None
+    bitrate: Optional[str] = None
+
 
 class UpdateUserRequest(BaseModel):
-    mode:     Optional[str] = None
+    mode: Optional[str] = None
     interval: Optional[int] = None
-    proxy:    Optional[str] = None
+    proxy: Optional[str] = None
 
 
 # ── StoppableTikTokRecorder ────────────────────────────────────────────────────
+
 
 class StoppableTikTokRecorder(TikTokRecorder):
     """
@@ -153,7 +159,9 @@ class StoppableTikTokRecorder(TikTokRecorder):
                     time.sleep(2)
 
                 except Exception as ex:
-                    logger.error(f"Unexpected error during recording: {ex}", exc_info=True)
+                    logger.error(
+                        f"Unexpected error during recording: {ex}", exc_info=True
+                    )
                     stop_recording = True
 
                 finally:
@@ -168,11 +176,13 @@ class StoppableTikTokRecorder(TikTokRecorder):
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
+
 def _get_cookies() -> dict:
     try:
         return read_cookies()
     except Exception:
         return {}
+
 
 def _make_config(username: str, entry: dict, mode: Mode) -> RecorderConfig:
     return RecorderConfig(
@@ -185,6 +195,7 @@ def _make_config(username: str, entry: dict, mode: Mode) -> RecorderConfig:
         duration=entry.get("duration"),
         bitrate=entry.get("bitrate"),
     )
+
 
 def _count_recordings(username: str) -> int:
     user_dir = RECORDINGS_DIR / username
@@ -199,9 +210,9 @@ def _recording_worker(username: str, stop_event: threading.Event):
     stop_event              → kills the whole worker (user removed / server shutdown)
     _rec_stop_events[user]  → stops only the active recording, loop continues
     """
-    entry    = watchlist.get(username, {})
-    cookies  = _get_cookies()
-    api      = TikTokAPI(proxy=entry.get("proxy"), cookies=cookies)
+    entry = watchlist.get(username, {})
+    cookies = _get_cookies()
+    api = TikTokAPI(proxy=entry.get("proxy"), cookies=cookies)
     interval = entry.get("interval", 5)
 
     while not stop_event.is_set():
@@ -210,7 +221,9 @@ def _recording_worker(username: str, stop_event: threading.Event):
             if room_id and api.is_room_alive(room_id):
                 with _state_lock:
                     if username in watchlist:
-                        watchlist[username]["last_seen_live"] = datetime.utcnow().isoformat()
+                        watchlist[username]["last_seen_live"] = (
+                            datetime.utcnow().isoformat()
+                        )
                         watchlist[username]["status"] = "recording"
                         _save_watchlist(watchlist)
 
@@ -218,7 +231,7 @@ def _recording_worker(username: str, stop_event: threading.Event):
                 rec_stop = threading.Event()
                 _rec_stop_events[username] = rec_stop
 
-                cfg      = _make_config(username, entry, Mode.MANUAL)
+                cfg = _make_config(username, entry, Mode.MANUAL)
                 recorder = StoppableTikTokRecorder(cfg, rec_stop)
 
                 rec_thread = threading.Thread(
@@ -229,7 +242,11 @@ def _recording_worker(username: str, stop_event: threading.Event):
                 rec_thread.start()
 
                 # wait until: stream ends | worker stopped | recording manually stopped
-                while rec_thread.is_alive() and not stop_event.is_set() and not rec_stop.is_set():
+                while (
+                    rec_thread.is_alive()
+                    and not stop_event.is_set()
+                    and not rec_stop.is_set()
+                ):
                     rec_thread.join(timeout=2)
 
                 # if the whole worker is being killed, propagate to recording too
@@ -277,6 +294,7 @@ def _start_worker(username: str):
     t.start()
     _workers[username] = t
 
+
 def _stop_worker(username: str):
     # first stop the active recording if any
     if username in _rec_stop_events:
@@ -300,6 +318,7 @@ async def startup():
 
 # ── API routes ─────────────────────────────────────────────────────────────────
 
+
 @app.get("/api/users")
 def list_users():
     with _state_lock:
@@ -318,17 +337,17 @@ def add_user(req: AddUserRequest):
         if username in watchlist:
             raise HTTPException(409, f"@{username} is already in the watchlist")
         entry = {
-            "username":         username,
-            "mode":             req.mode,
-            "interval":         req.interval,
-            "proxy":            req.proxy,
-            "output":           req.output,
-            "duration":         req.duration,
-            "bitrate":          req.bitrate,
-            "added_at":         datetime.utcnow().isoformat(),
-            "status":           "monitoring" if req.mode == "automatic" else "idle",
-            "last_seen_live":   None,
-            "last_error":       None,
+            "username": username,
+            "mode": req.mode,
+            "interval": req.interval,
+            "proxy": req.proxy,
+            "output": req.output,
+            "duration": req.duration,
+            "bitrate": req.bitrate,
+            "added_at": datetime.utcnow().isoformat(),
+            "status": "monitoring" if req.mode == "automatic" else "idle",
+            "last_seen_live": None,
+            "last_error": None,
         }
         watchlist[username] = entry
         _save_watchlist(watchlist)
@@ -343,7 +362,7 @@ def remove_user(username: str):
     with _state_lock:
         if username not in watchlist:
             raise HTTPException(404, f"@{username} not found")
-    _stop_worker(username)   # stops recording + worker before deleting
+    _stop_worker(username)  # stops recording + worker before deleting
     with _state_lock:
         del watchlist[username]
         _save_watchlist(watchlist)
@@ -357,9 +376,12 @@ def update_user(username: str, req: UpdateUserRequest):
         if username not in watchlist:
             raise HTTPException(404, f"@{username} not found")
         entry = watchlist[username]
-        if req.mode     is not None: entry["mode"]     = req.mode
-        if req.interval is not None: entry["interval"] = req.interval
-        if req.proxy    is not None: entry["proxy"]    = req.proxy
+        if req.mode is not None:
+            entry["mode"] = req.mode
+        if req.interval is not None:
+            entry["interval"] = req.interval
+        if req.proxy is not None:
+            entry["proxy"] = req.proxy
         _save_watchlist(watchlist)
     _stop_worker(username)
     if entry.get("mode") == "automatic":
@@ -386,7 +408,7 @@ def manual_record(username: str, background_tasks: BackgroundTasks):
             with _state_lock:
                 watchlist[username]["status"] = "recording"
                 _save_watchlist(watchlist)
-            cfg      = _make_config(username, entry, Mode.MANUAL)
+            cfg = _make_config(username, entry, Mode.MANUAL)
             recorder = StoppableTikTokRecorder(cfg, rec_stop)
             recorder.run()
         except Exception as e:
@@ -415,7 +437,9 @@ def stop_recording(username: str):
         status = watchlist[username].get("status")
 
     if status != "recording":
-        raise HTTPException(409, f"@{username} is not currently recording (status: {status})")
+        raise HTTPException(
+            409, f"@{username} is not currently recording (status: {status})"
+        )
 
     if username not in _rec_stop_events:
         raise HTTPException(500, "No active recording event found for this user")
@@ -432,7 +456,7 @@ def check_live_status(username: str):
             raise HTTPException(404, f"@{username} not found")
         entry = watchlist[username]
     try:
-        api     = TikTokAPI(proxy=entry.get("proxy"), cookies=_get_cookies())
+        api = TikTokAPI(proxy=entry.get("proxy"), cookies=_get_cookies())
         room_id = api.get_room_id_from_user(username)
         is_live = bool(room_id and api.is_room_alive(room_id))
         if is_live:
@@ -452,13 +476,15 @@ def list_recordings():
             stat = f.stat()
             # parent dir name = username (e.g. /data/recordings/flomtv/file.mp4)
             username = f.parent.name if f.parent != RECORDINGS_DIR else "unknown"
-            files.append({
-                "filename":   f.name,
-                "username":   username,
-                "size_mb":    round(stat.st_size / 1024 / 1024, 2),
-                "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-                "path":       str(f),
-            })
+            files.append(
+                {
+                    "filename": f.name,
+                    "username": username,
+                    "size_mb": round(stat.st_size / 1024 / 1024, 2),
+                    "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+                    "path": str(f),
+                }
+            )
     files.sort(key=lambda x: x["created_at"], reverse=True)
     return files
 
@@ -477,18 +503,20 @@ def get_logs(lines: int = 100):
 @app.get("/api/stats")
 def get_stats():
     with _state_lock:
-        total      = len(watchlist)
-        recording  = sum(1 for e in watchlist.values() if e.get("status") == "recording")
-        monitoring = sum(1 for e in watchlist.values() if e.get("status") == "monitoring")
+        total = len(watchlist)
+        recording = sum(1 for e in watchlist.values() if e.get("status") == "recording")
+        monitoring = sum(
+            1 for e in watchlist.values() if e.get("status") == "monitoring"
+        )
     total_recs = len(list(RECORDINGS_DIR.rglob("*.mp4")))
     rec_files = list(RECORDINGS_DIR.rglob("*.mp4"))
-    disk_mb   = sum(f.stat().st_size for f in rec_files) / 1024 / 1024
+    disk_mb = sum(f.stat().st_size for f in rec_files) / 1024 / 1024
     return {
-        "total_users":         total,
+        "total_users": total,
         "currently_recording": recording,
-        "monitoring":          monitoring,
-        "total_recordings":    total_recs,
-        "disk_used_mb":        round(disk_mb, 1),
+        "monitoring": monitoring,
+        "total_recordings": total_recs,
+        "disk_used_mb": round(disk_mb, 1),
     }
 
 
@@ -503,17 +531,22 @@ def download_recording(username: str, filename: str, inline: bool = False):
         file_path.relative_to(RECORDINGS_DIR)
     except ValueError:
         raise HTTPException(403, "Access denied")
-    disposition = f'inline; filename="{filename}"' if inline else f'attachment; filename="{filename}"'
+    disposition = (
+        f'inline; filename="{filename}"'
+        if inline
+        else f'attachment; filename="{filename}"'
+    )
     return FileResponse(
         path=str(file_path),
         filename=filename,
         media_type="video/mp4",
-        headers={"Content-Disposition": disposition}
+        headers={"Content-Disposition": disposition},
     )
 
 
 class BatchDeleteRequest(BaseModel):
     files: list[str]  # list of "username/filename"
+
 
 @app.delete("/api/recordings")
 def batch_delete_recordings(req: BatchDeleteRequest):
@@ -547,6 +580,7 @@ def batch_delete_recordings(req: BatchDeleteRequest):
 QUEUE_FILE = DATA_DIR / "queue.json"
 _queue_lock = threading.Lock()
 
+
 def _load_queue() -> list:
     if QUEUE_FILE.exists():
         try:
@@ -555,8 +589,10 @@ def _load_queue() -> list:
             return []
     return []
 
+
 def _save_queue(queue: list):
     QUEUE_FILE.write_text(json.dumps(queue, indent=2))
+
 
 def _queue_update_item(item_id: str, **kwargs):
     """Update a queue item by id and persist."""
@@ -566,6 +602,7 @@ def _queue_update_item(item_id: str, **kwargs):
                 item.update(kwargs)
                 break
         _save_queue(_dl_queue)
+
 
 # Load queue on startup, reset any processing → interrupted
 _dl_queue: list = _load_queue()
@@ -578,6 +615,7 @@ with _queue_lock:
 # SSE subscribers: set of asyncio.Queue objects
 _sse_subscribers: set = set()
 
+
 def _broadcast(event: dict):
     """Push event to all SSE subscribers."""
     for q in list(_sse_subscribers):
@@ -586,12 +624,15 @@ def _broadcast(event: dict):
         except Exception:
             pass
 
+
 # ── Download log helpers ──────────────────────────────────────────────────────
 def _dl_log_path(username: str) -> Path:
     return DOWNLOADS_DIR / username / f"{username}_log.json"
 
+
 def _dl_error_log_path(username: str) -> Path:
     return DOWNLOADS_DIR / username / f"{username}_errors.log"
+
 
 def _load_dl_log(username: str) -> dict:
     p = _dl_log_path(username)
@@ -602,16 +643,19 @@ def _load_dl_log(username: str) -> dict:
             return {}
     return {}
 
+
 def _save_dl_log(username: str, log: dict):
     p = _dl_log_path(username)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(log, indent=2))
+
 
 def _append_dl_error(username: str, message: str):
     p = _dl_error_log_path(username)
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "a") as f:
         f.write(f"[{datetime.utcnow().isoformat()}] {message}\n")
+
 
 # ── URL helpers ───────────────────────────────────────────────────────────────
 async def _resolve_url(url: str, client: httpx.AsyncClient) -> str:
@@ -621,6 +665,7 @@ async def _resolve_url(url: str, client: httpx.AsyncClient) -> str:
     except Exception:
         return url
 
+
 def _extract_video_id(url: str) -> Optional[str]:
     for pattern in [r"/video/(\d+)", r"/photo/(\d+)"]:
         m = re.search(pattern, url)
@@ -628,11 +673,13 @@ def _extract_video_id(url: str) -> Optional[str]:
             return m.group(1)
     return None
 
+
 def _extract_username(url: str) -> Optional[str]:
     m = re.search(r"/@([\w.]+)/", url)
     if m:
         return m.group(1)
     return None
+
 
 async def _get_video_id_and_username(url: str, client: httpx.AsyncClient):
     resolved = url
@@ -641,6 +688,7 @@ async def _get_video_id_and_username(url: str, client: httpx.AsyncClient):
     video_id = _extract_video_id(resolved)
     username = _extract_username(resolved)
     return video_id, username, resolved
+
 
 # ── tikwm helpers ─────────────────────────────────────────────────────────────
 async def _submit_tikwm_task(url: str, client: httpx.AsyncClient) -> Optional[str]:
@@ -654,21 +702,27 @@ async def _submit_tikwm_task(url: str, client: httpx.AsyncClient) -> Optional[st
     except Exception as e:
         raise RuntimeError(f"tikwm submit failed: {e}")
 
-async def _poll_tikwm_result(task_id: str, client: httpx.AsyncClient, max_attempts: int = 15, delay: float = 0.5) -> Optional[dict]:
+
+async def _poll_tikwm_result(
+    task_id: str, client: httpx.AsyncClient, max_attempts: int = 15, delay: float = 0.5
+) -> Optional[dict]:
     for _ in range(max_attempts):
         try:
-            resp = await client.get(TIKWM_RESULT, params={"task_id": task_id}, timeout=15)
+            resp = await client.get(
+                TIKWM_RESULT, params={"task_id": task_id}, timeout=15
+            )
             resp.raise_for_status()
             data = resp.json()
             if data.get("code") == 0 and data.get("data"):
                 task_data = data["data"]
-                detail    = task_data.get("detail", {})
+                detail = task_data.get("detail", {})
                 if task_data.get("status") == 2 and detail.get("play_url"):
                     return detail
         except Exception:
             pass
         await asyncio.sleep(delay)
     return None
+
 
 async def _download_file(url: str, dest: Path, client: httpx.AsyncClient):
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -678,11 +732,12 @@ async def _download_file(url: str, dest: Path, client: httpx.AsyncClient):
             async for chunk in resp.aiter_bytes(8192):
                 f.write(chunk)
 
+
 # ── Core processor ────────────────────────────────────────────────────────────
 async def _process_queue_item(item: dict):
     """Process a single queue item, broadcasting status updates."""
     item_id = item["id"]
-    url     = item["url"]
+    url = item["url"]
 
     def update(status, reason="", **extra):
         _queue_update_item(item_id, status=status, reason=reason, **extra)
@@ -691,8 +746,12 @@ async def _process_queue_item(item: dict):
     update("processing")
 
     try:
-        async with httpx.AsyncClient(headers={"User-Agent": "Mozilla/5.0"}, follow_redirects=True) as client:
-            video_id, username, resolved_url = await _get_video_id_and_username(url, client)
+        async with httpx.AsyncClient(
+            headers={"User-Agent": "Mozilla/5.0"}, follow_redirects=True
+        ) as client:
+            video_id, username, resolved_url = await _get_video_id_and_username(
+                url, client
+            )
 
             if not video_id:
                 update("error", "Could not extract video ID from URL")
@@ -704,19 +763,23 @@ async def _process_queue_item(item: dict):
             # duplicate check
             log = _load_dl_log(username)
             if video_id in log:
-                update("skipped", f"Already downloaded on {log[video_id]['downloaded_at']}")
+                update(
+                    "skipped", f"Already downloaded on {log[video_id]['downloaded_at']}"
+                )
                 return
 
             # batch duplicate check (same video_id already in queue as downloaded)
             with _queue_lock:
                 already = any(
-                    i["id"] != item_id and
-                    i.get("video_id") == video_id and
-                    i.get("status") == "downloaded"
+                    i["id"] != item_id
+                    and i.get("video_id") == video_id
+                    and i.get("status") == "downloaded"
                     for i in _dl_queue
                 )
             if already:
-                update("skipped", "Duplicate in queue — already downloaded in this session")
+                update(
+                    "skipped", "Duplicate in queue — already downloaded in this session"
+                )
                 return
 
             # submit to tikwm
@@ -728,7 +791,10 @@ async def _process_queue_item(item: dict):
                 return
 
             if not task_id:
-                update("error", "tikwm did not return a task_id (video may not exist or is private)")
+                update(
+                    "error",
+                    "tikwm did not return a task_id (video may not exist or is private)",
+                )
                 _append_dl_error(username, f"[{video_id}] no task_id")
                 return
 
@@ -738,10 +804,10 @@ async def _process_queue_item(item: dict):
                 _append_dl_error(username, f"[{video_id}] task {task_id} timed out")
                 return
 
-            play_url     = detail.get("play_url")
+            play_url = detail.get("play_url")
             api_username = detail.get("author", {}).get("unique_id") or username
-            filename     = f"{api_username}_{video_id}.mp4"
-            dest         = DOWNLOADS_DIR / api_username / filename
+            filename = f"{api_username}_{video_id}.mp4"
+            dest = DOWNLOADS_DIR / api_username / filename
 
             try:
                 await _download_file(play_url, dest, client)
@@ -755,23 +821,39 @@ async def _process_queue_item(item: dict):
             # write download log
             log = _load_dl_log(api_username)
             log[video_id] = {
-                "video_id":      video_id,
-                "original_url":  url,
-                "filename":      filename,
+                "video_id": video_id,
+                "original_url": url,
+                "filename": filename,
                 "downloaded_at": datetime.utcnow().isoformat(),
             }
             _save_dl_log(api_username, log)
-            _queue_update_item(item_id, status="downloaded", reason="OK",
-                               video_id=video_id, username=api_username, filename=filename)
-            _broadcast({"id": item_id, "status": "downloaded", "reason": "OK",
-                        "video_id": video_id, "username": api_username, "filename": filename})
+            _queue_update_item(
+                item_id,
+                status="downloaded",
+                reason="OK",
+                video_id=video_id,
+                username=api_username,
+                filename=filename,
+            )
+            _broadcast(
+                {
+                    "id": item_id,
+                    "status": "downloaded",
+                    "reason": "OK",
+                    "video_id": video_id,
+                    "username": api_username,
+                    "filename": filename,
+                }
+            )
 
     except Exception as e:
         update("error", f"Unexpected error: {e}")
 
+
 # ── Background worker ─────────────────────────────────────────────────────────
 _worker_thread: Optional[threading.Thread] = None
-_worker_event  = threading.Event()
+_worker_event = threading.Event()
+
 
 def _queue_worker():
     """Runs in background thread, processes queue items one at a time."""
@@ -790,7 +872,9 @@ def _queue_worker():
             _worker_event.wait(timeout=2)
             _worker_event.clear()
 
+
 _worker_started = False
+
 
 def _ensure_worker():
     global _worker_thread
@@ -800,6 +884,7 @@ def _ensure_worker():
         _worker_thread = threading.Thread(target=_queue_worker, daemon=True)
         _worker_thread.start()
 
+
 def _start_dl_worker():
     """Explicitly start/wake the worker — called only on user action."""
     global _worker_started
@@ -807,9 +892,11 @@ def _start_dl_worker():
     _ensure_worker()
     _worker_event.set()
 
+
 # ── API endpoints ─────────────────────────────────────────────────────────────
 class DownloadRequest(BaseModel):
     urls: list[str]
+
 
 @app.post("/api/downloads")
 def submit_downloads(req: DownloadRequest):
@@ -828,10 +915,10 @@ def submit_downloads(req: DownloadRequest):
                 continue
             seen_in_req.add(url)
             item = {
-                "id":       str(uuid.uuid4()),
-                "url":      url,
-                "status":   "waiting",
-                "reason":   "",
+                "id": str(uuid.uuid4()),
+                "url": url,
+                "status": "waiting",
+                "reason": "",
                 "video_id": None,
                 "username": None,
                 "filename": None,
@@ -842,7 +929,14 @@ def submit_downloads(req: DownloadRequest):
         _save_queue(_dl_queue)
 
     for item in added:
-        _broadcast({"id": item["id"], "status": "waiting", "url": item["url"], "added_at": item["added_at"]})
+        _broadcast(
+            {
+                "id": item["id"],
+                "status": "waiting",
+                "url": item["url"],
+                "added_at": item["added_at"],
+            }
+        )
 
     _start_dl_worker()
     return {"queued": len(added), "items": added}
@@ -876,8 +970,8 @@ async def downloads_stream():
         event_gen(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control":               "no-cache",
-            "X-Accel-Buffering":           "no",
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
             "Access-Control-Allow-Origin": "*",
         },
     )
@@ -891,7 +985,9 @@ def remove_queue_item(item_id: str):
         if not item:
             raise HTTPException(404, "Queue item not found")
         if item["status"] != "waiting":
-            raise HTTPException(409, f"Cannot remove item with status '{item['status']}'")
+            raise HTTPException(
+                409, f"Cannot remove item with status '{item['status']}'"
+            )
         _dl_queue.remove(item)
         _save_queue(_dl_queue)
     _broadcast({"id": item_id, "status": "removed"})
@@ -920,6 +1016,7 @@ def resume_full_queue():
 class ClearQueueRequest(BaseModel):
     statuses: list[str]
 
+
 @app.delete("/api/downloads/queue")
 def clear_queue_by_status(req: ClearQueueRequest):
     """Remove all queue items with the given statuses from memory and file."""
@@ -941,7 +1038,9 @@ def resume_queue_item(item_id: str):
         if not item:
             raise HTTPException(404, "Queue item not found")
         if item["status"] != "interrupted":
-            raise HTTPException(409, f"Item status is '{item['status']}', not interrupted")
+            raise HTTPException(
+                409, f"Item status is '{item['status']}', not interrupted"
+            )
         item["status"] = "waiting"
         item["reason"] = ""
         _save_queue(_dl_queue)
@@ -957,12 +1056,14 @@ def list_downloads():
     for f in DOWNLOADS_DIR.rglob("*.mp4"):
         stat = f.stat()
         username = f.parent.name
-        files.append({
-            "filename":   f.name,
-            "username":   username,
-            "size_mb":    round(stat.st_size / 1024 / 1024, 2),
-            "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-        })
+        files.append(
+            {
+                "filename": f.name,
+                "username": username,
+                "size_mb": round(stat.st_size / 1024 / 1024, 2),
+                "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+            }
+        )
     files.sort(key=lambda x: x["created_at"], reverse=True)
     return files
 
@@ -976,13 +1077,22 @@ def serve_download(username: str, filename: str, inline: bool = False):
         file_path.relative_to(DOWNLOADS_DIR)
     except ValueError:
         raise HTTPException(403, "Access denied")
-    disposition = f'inline; filename="{filename}"' if inline else f'attachment; filename="{filename}"'
-    return FileResponse(path=str(file_path), filename=filename, media_type="video/mp4",
-                        headers={"Content-Disposition": disposition})
+    disposition = (
+        f'inline; filename="{filename}"'
+        if inline
+        else f'attachment; filename="{filename}"'
+    )
+    return FileResponse(
+        path=str(file_path),
+        filename=filename,
+        media_type="video/mp4",
+        headers={"Content-Disposition": disposition},
+    )
 
 
 class BatchDeleteDownloadsRequest(BaseModel):
     files: list[str]
+
 
 @app.delete("/api/downloads")
 def batch_delete_downloads(req: BatchDeleteDownloadsRequest):
@@ -1000,7 +1110,9 @@ def batch_delete_downloads(req: BatchDeleteDownloadsRequest):
                 failed.append({"file": entry, "error": "File not found"})
                 continue
             log = _load_dl_log(username)
-            vid = next((v for v, m in log.items() if m.get("filename") == filename), None)
+            vid = next(
+                (v for v, m in log.items() if m.get("filename") == filename), None
+            )
             if vid:
                 del log[vid]
                 _save_dl_log(username, log)
@@ -1017,10 +1129,13 @@ def batch_delete_downloads(req: BatchDeleteDownloadsRequest):
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+
 @app.get("/")
 def index():
     return FileResponse(str(STATIC_DIR / "index.html"))
 
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
