@@ -644,12 +644,12 @@ async def _get_video_id_and_username(url: str, client: httpx.AsyncClient):
     return video_id, username, resolved
 
 
-async def _submit_tikwm_task(video_id: str, client: httpx.AsyncClient) -> Optional[str]:
-    """Submit a task to tikwm and return task_id."""
+async def _submit_tikwm_task(url: str, client: httpx.AsyncClient) -> Optional[str]:
+    """Submit a full TikTok URL to tikwm and return task_id."""
     try:
         resp = await client.post(
             TIKWM_SUBMIT,
-            data={"url": video_id, "web": "1"},
+            data={"url": url},
             timeout=15,
         )
         resp.raise_for_status()
@@ -664,7 +664,7 @@ async def _submit_tikwm_task(video_id: str, client: httpx.AsyncClient) -> Option
 async def _poll_tikwm_result(
     task_id: str, client: httpx.AsyncClient, max_attempts: int = 15, delay: float = 0.5
 ) -> Optional[dict]:
-    """Poll tikwm result endpoint until status==2 and size>0."""
+    """Poll tikwm result endpoint until status==2 and play_url is present."""
     for attempt in range(max_attempts):
         try:
             resp = await client.get(
@@ -675,11 +675,12 @@ async def _poll_tikwm_result(
             resp.raise_for_status()
             data = resp.json()
             if data.get("code") == 0 and data.get("data"):
-                detail = data["data"]
-                status = detail.get("status")
-                size = detail.get("detail", {}).get("size", 0)
-                if status == 2 and size and int(size) > 0:
-                    return detail.get("detail")
+                task_data = data["data"]  # data.status, data.detail
+                status = task_data.get("status")
+                detail = task_data.get("detail", {})
+                play_url = detail.get("play_url")
+                if status == 2 and play_url:
+                    return detail  # return data.detail dict
         except Exception:
             pass
         await asyncio.sleep(delay)
@@ -731,9 +732,9 @@ async def _process_single_url(url: str, client: httpx.AsyncClient) -> dict:
             result["reason"] = f"Already downloaded on {log[video_id]['downloaded_at']}"
             return result
 
-        # submit tikwm task
+        # submit tikwm task — pass the full resolved URL
         try:
-            task_id = await _submit_tikwm_task(video_id, client)
+            task_id = await _submit_tikwm_task(resolved_url, client)
         except RuntimeError as e:
             result["reason"] = str(e)
             _append_dl_error(username, f"[{video_id}] {e}")
