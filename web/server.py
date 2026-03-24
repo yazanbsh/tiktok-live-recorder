@@ -8,13 +8,13 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from routers.shared.config import STATIC_DIR
-from routers.shared.files import router as files_router
-from routers.tiktok.watchlist import (
+from web.routers.shared.config import STATIC_DIR
+from web.routers.shared.files import router as files_router
+from web.routers.tiktok.watchlist import (
     router as tiktok_watchlist_router,
     startup_watchlist,
 )
-from routers.tiktok.downloader import router as tiktok_downloader_router
+from web.routers.tiktok.downloader import router as tiktok_downloader_router
 
 app = FastAPI(title="TikTok Live Recorder", version="2.0.0")
 
