@@ -274,6 +274,19 @@
 <div id="toast-container"></div>
 
 
+<!-- VIDEO MODAL -->
+<div class="vid-modal-overlay" id="vid-modal-overlay" onclick="closeVideoModal(event)">
+  <div class="vid-modal">
+    <div class="vid-modal-header">
+      <span class="vid-modal-title" id="vid-modal-title"></span>
+      <button class="vid-modal-close" onclick="closeVideoModal()">✕</button>
+    </div>
+    <div class="vid-modal-body">
+      <video id="vid-modal-player" playsinline controls></video>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.plyr.io/3.8.3/plyr.js"></script>
 <script src="/static/js/tiktok.js"></script>
 <script src="/static/js/core.js"></script>
