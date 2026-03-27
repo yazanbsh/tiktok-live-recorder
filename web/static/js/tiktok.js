@@ -54,6 +54,12 @@ function renderUserRow(u) {
           ? `<button class="action-btn" style="border-color:var(--accent);color:var(--accent)" onclick="stopRecording('${u.username}')">■ Stop</button>`
           : u.mode === 'manual' ? `<button class="action-btn primary-btn" onclick="triggerRecord('${u.username}')">▶ Record</button>` : ''
         }
+        <button class="action-btn${u.record !== false ? '' : ''}" 
+          style="${u.record !== false ? 'border-color:var(--accent);color:var(--accent);' : 'color:var(--muted);'}"
+          onclick="toggleRecord('${u.username}', ${u.record !== false})"
+          title="${u.record !== false ? 'Recording enabled — click to disable' : 'Recording disabled — click to enable'}">
+          ${u.record !== false ? '⏺ REC' : '⏺ REC OFF'}
+        </button>
         <button class="action-btn danger" onclick="removeUser('${u.username}')">✕ Remove</button>
       </div>
     </td>
@@ -158,6 +164,7 @@ async function submitAddUser() {
     proxy:    document.getElementById('f-proxy').value.trim() || null,
     duration: parseInt(document.getElementById('f-duration').value) || null,
     bitrate:  document.getElementById('f-bitrate').value.trim() || null,
+    record:   document.getElementById('f-record').checked,
   };
 
   try {
@@ -168,6 +175,7 @@ async function submitAddUser() {
     ['f-username','f-proxy','f-duration','f-bitrate'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('f-interval').value = '5';
     document.getElementById('f-mode').value = 'automatic';
+    document.getElementById('f-record').checked = true;
     loadWatchlist();
     loadStats();
   } catch(e) {
@@ -179,6 +187,17 @@ async function submitAddUser() {
 document.getElementById('f-username').addEventListener('keydown', e => {
   if (e.key === 'Enter') submitAddUser();
 });
+
+async function toggleRecord(username, currentlyEnabled) {
+  try {
+    await apiFetch(`/api/users/${username}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ record: !currentlyEnabled }),
+    });
+    toast(`Recording ${!currentlyEnabled ? 'enabled' : 'disabled'} for @${username}`, 'info');
+    loadWatchlist();
+  } catch(e) { toast(`Error: ${e.message}`, 'error'); }
+}
 
 // ── Recordings ───────────────────────────────────────────────────────────────
 // { "username/filename" -> true }
@@ -768,4 +787,3 @@ async function dlSingleDelete(username, filename) {
     }
   } catch(e) { toast(`Error: ${e.message}`, 'error'); }
 }
-
