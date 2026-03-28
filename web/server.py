@@ -15,6 +15,10 @@ from web.routers.tiktok.watchlist import (
     startup_watchlist,
 )
 from web.routers.tiktok.downloader import router as tiktok_downloader_router
+from web.routers.youtube.watchlist import (
+    router as yt_watchlist_router,
+    startup_yt_watchlist,
+)
 
 app = FastAPI(title="TikTok Live Recorder", version="2.0.0")
 
@@ -22,12 +26,14 @@ app = FastAPI(title="TikTok Live Recorder", version="2.0.0")
 app.include_router(files_router)
 app.include_router(tiktok_watchlist_router)
 app.include_router(tiktok_downloader_router)
+app.include_router(yt_watchlist_router)
 
 
 # ── Startup ───────────────────────────────────────────────────────────────────
 @app.on_event("startup")
 async def startup():
     startup_watchlist()
+    startup_yt_watchlist()
 
 
 # ── Static files + frontend ───────────────────────────────────────────────────

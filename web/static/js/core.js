@@ -1,6 +1,6 @@
 const API = '';
 
-// ── Navigation ──────────────────────────────────────────────────────────────
+// ── Navigation ───────────────────────────────────────────────────────────────
 function showPanel(name) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -8,20 +8,30 @@ function showPanel(name) {
   document.querySelectorAll('.nav-item').forEach(n => {
     if (n.getAttribute('onclick') === `showPanel('${name}')`) n.classList.add('active');
   });
-  document.getElementById('page-title').textContent =
-    { watchlist: 'Watchlist', recordings: 'Recordings', downloader: 'Downloader', downloads: 'Downloads', logs: 'System Log' }[name] || name;
+  const titles = {
+    watchlist:      'Watchlist',
+    recordings:     'TK Recordings',
+    'yt-recordings':'YT Recordings',
+    downloader:     'Downloader',
+    downloads:      'Downloads',
+    logs:           'System Log',
+  };
+  document.getElementById('page-title').textContent = titles[name] || name;
 
-  if (name === 'recordings') loadRecordings();
-  if (name === 'downloads') loadDownloadsList();
-  if (name === 'logs') loadLogs();
+  if (name === 'recordings')      loadRecordings();
+  if (name === 'yt-recordings')   loadYTRecordings();
+  if (name === 'downloads')       loadDownloadsList();
+  if (name === 'logs')            loadLogs();
 }
 
 function refreshAll() {
   loadWatchlist();
   loadStats();
+  loadYTWatchlist();
+  loadYTStats();
 }
 
-// ── API helpers ──────────────────────────────────────────────────────────────
+// ── API helpers ───────────────────────────────────────────────────────────────
 async function apiFetch(path, opts = {}) {
   const res = await fetch(API + path, {
     headers: { 'Content-Type': 'application/json', ...opts.headers },
@@ -34,18 +44,18 @@ async function apiFetch(path, opts = {}) {
   return res.json();
 }
 
-// ── Stats ────────────────────────────────────────────────────────────────────
+// ── Stats ─────────────────────────────────────────────────────────────────────
 async function loadStats() {
   try {
     const s = await apiFetch('/api/stats');
-    document.getElementById('stat-total').textContent = s.total_users;
+    document.getElementById('stat-total').textContent     = s.total_users;
     document.getElementById('stat-recording').textContent = s.currently_recording;
-    document.getElementById('stat-clips').textContent = s.total_recordings;
-    document.getElementById('stat-disk').textContent = s.disk_used_mb + ' MB';
+    document.getElementById('stat-clips').textContent     = s.total_recordings;
+    document.getElementById('stat-disk').textContent      = s.disk_used_mb + ' MB';
   } catch(e) { /* silent */ }
 }
 
-// ── Logs ─────────────────────────────────────────────────────────────────────
+// ── Logs ──────────────────────────────────────────────────────────────────────
 async function loadLogs() {
   const container = document.getElementById('log-lines');
   try {
@@ -64,10 +74,10 @@ async function loadLogs() {
 }
 
 function escHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-// ── Toast ────────────────────────────────────────────────────────────────────
+// ── Toast ─────────────────────────────────────────────────────────────────────
 function toast(msg, type = 'info') {
   const icons = { success: '✓', error: '✕', info: '◎' };
   const el = document.createElement('div');
@@ -77,45 +87,22 @@ function toast(msg, type = 'info') {
   setTimeout(() => el.remove(), 3500);
 }
 
-// ── Init + auto-refresh ───────────────────────────────────────────────────────
-loadWatchlist();
-loadStats();
-pollLiveStatus(); // initial live check on page load
-
-// auto-refresh watchlist state every 15 seconds
-setInterval(() => {
-  const active = document.querySelector('.panel.active');
-  if (active && active.id === 'panel-watchlist') {
-    loadWatchlist();
-    loadStats();
-  }
-}, 15000);
-
-// poll TikTok live status every 60 seconds
-setInterval(() => {
-  const active = document.querySelector('.panel.active');
-  if (active && active.id === 'panel-watchlist') {
-    pollLiveStatus();
-  }
-}, 60000);
-
+// ── Video Modal (shared) ──────────────────────────────────────────────────────
 let _plyrInstance = null;
 
 function openVideoModal(username, filename, type = 'rec') {
-  const base = type === 'dl' ? '/api/downloads' : '/api/recordings';
-  const src = `${base}/${encodeURIComponent(username)}/${encodeURIComponent(filename)}?inline=true`;
+  const baseMap = { rec: '/api/recordings', dl: '/api/tiktok/downloads', yt: '/api/yt/recordings' };
+  const base = baseMap[type] || '/api/recordings';
+  const src  = `${base}/${encodeURIComponent(username)}/${encodeURIComponent(filename)}?inline=true`;
+
   const overlay = document.getElementById('vid-modal-overlay');
   const videoEl = document.getElementById('vid-modal-player');
   document.getElementById('vid-modal-title').textContent = filename;
 
-  // destroy previous instance if any
   if (_plyrInstance) { _plyrInstance.destroy(); _plyrInstance = null; }
-
-  // reset video element
   videoEl.src = '';
   videoEl.load();
 
-  // init Plyr then set source
   _plyrInstance = new Plyr(videoEl, {
     controls: ['play-large','play','progress','current-time','mute','volume','fullscreen'],
     keyboard: { global: false },
@@ -130,14 +117,12 @@ function openVideoModal(username, filename, type = 'rec') {
 }
 
 function closeVideoModal(e) {
-  // only close if clicking overlay background, not the modal itself
   if (e && e.target !== document.getElementById('vid-modal-overlay')) return;
   document.getElementById('vid-modal-overlay').classList.remove('open');
   document.body.style.overflow = '';
   if (_plyrInstance) { _plyrInstance.pause(); }
 }
 
-// close on Escape key
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     document.getElementById('vid-modal-overlay').classList.remove('open');
@@ -145,3 +130,31 @@ document.addEventListener('keydown', e => {
     if (_plyrInstance) _plyrInstance.pause();
   }
 });
+
+// ── Init + auto-refresh ───────────────────────────────────────────────────────
+loadWatchlist();
+loadStats();
+loadYTWatchlist();
+loadYTStats();
+pollLiveStatus();
+pollYTLiveStatus();
+
+// refresh watchlist every 15s when on watchlist panel
+setInterval(() => {
+  const active = document.querySelector('.panel.active');
+  if (active && active.id === 'panel-watchlist') {
+    loadWatchlist();
+    loadStats();
+    loadYTWatchlist();
+    loadYTStats();
+  }
+}, 15000);
+
+// poll live status every 60s
+setInterval(() => {
+  const active = document.querySelector('.panel.active');
+  if (active && active.id === 'panel-watchlist') {
+    pollLiveStatus();
+    pollYTLiveStatus();
+  }
+}, 60000);

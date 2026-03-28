@@ -16,15 +16,22 @@ BASE_DIR = Path(__file__).parent.parent.parent  # web/
 DATA_DIR = Path(os.environ.get("DATA_DIR", str(BASE_DIR.parent / "data")))
 STATIC_DIR = BASE_DIR / "static"
 WATCHLIST_FILE = DATA_DIR / "watchlist.json"
+YT_WATCHLIST_FILE = DATA_DIR / "yt_watchlist.json"
 RECORDINGS_DIR = DATA_DIR / "recordings"
+YT_RECORDINGS_DIR = DATA_DIR / "yt_recordings"
 DOWNLOADS_DIR = DATA_DIR / "downloads"
 QUEUE_FILE = DATA_DIR / "queue.json"
 LOG_FILE = DATA_DIR / "logs" / "tiktok-recorder.log"
+
+# ── binary paths ──────────────────────────────────────────────────────────────
+YTDLP_BIN = os.environ.get("YTDLP_BIN", "/app/yt-dlp")
+DENO_BIN = os.environ.get("DENO_BIN", "/app/deno")
+COOKIES_FILE = Path("/app/src/cookies.txt")
 
 # tikwm endpoints
 TIKWM_SUBMIT = "https://www.tikwm.com/api/video/task/submit"
 TIKWM_RESULT = "https://www.tikwm.com/api/video/task/result"
 
 # ensure dirs exist
-for _d in (RECORDINGS_DIR, DOWNLOADS_DIR, DATA_DIR / "logs"):
+for _d in (RECORDINGS_DIR, YT_RECORDINGS_DIR, DOWNLOADS_DIR, DATA_DIR / "logs"):
     _d.mkdir(parents=True, exist_ok=True)

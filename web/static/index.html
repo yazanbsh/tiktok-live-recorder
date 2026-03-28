@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>TikTok Live Recorder</title>
+<title>Live Recorder Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/css/main.css">
@@ -11,12 +11,11 @@
 </head>
 <body>
 
-
 <div class="app">
   <!-- SIDEBAR -->
   <aside class="sidebar">
     <div class="logo">
-      <span class="logo-mark">◉ TK-REC</span>
+      <span class="logo-mark">◉ REC</span>
       <span class="logo-title">Live Recorder<br>Dashboard</span>
     </div>
     <nav>
@@ -24,7 +23,10 @@
         <span class="nav-icon">◈</span> Watchlist
       </div>
       <div class="nav-item" onclick="showPanel('recordings')">
-        <span class="nav-icon">▣</span> Recordings
+        <span class="nav-icon">▣</span> TK Recordings
+      </div>
+      <div class="nav-item" onclick="showPanel('yt-recordings')">
+        <span class="nav-icon">▶</span> YT Recordings
       </div>
       <div class="nav-item" onclick="showPanel('downloader')">
         <span class="nav-icon">↓</span> Downloader
@@ -45,9 +47,8 @@
   <main class="main">
     <div class="topbar">
       <span class="page-title" id="page-title">Watchlist</span>
-      <div class="topbar-actions">
+      <div class="topbar-actions" id="topbar-actions">
         <button class="btn btn-ghost" onclick="refreshAll()">↻ Refresh</button>
-        <button class="btn btn-primary" onclick="openAddModal()">+ Add User</button>
       </div>
     </div>
 
@@ -55,61 +56,115 @@
 
       <!-- ── WATCHLIST PANEL ── -->
       <div class="panel active" id="panel-watchlist">
-        <div class="stats-row" id="stats-row">
-          <div class="stat-card red">
-            <div class="stat-label">Monitored</div>
-            <div class="stat-value" id="stat-total">—</div>
-          </div>
-          <div class="stat-card red">
-            <div class="stat-label">Recording</div>
-            <div class="stat-value" id="stat-recording">—</div>
-          </div>
-          <div class="stat-card green">
-            <div class="stat-label">Saved Clips</div>
-            <div class="stat-value" id="stat-clips">—</div>
-          </div>
-          <div class="stat-card blue">
-            <div class="stat-label">Disk Used</div>
-            <div class="stat-value" id="stat-disk">—</div>
-          </div>
-        </div>
 
-        <div class="section-header">
-          <span class="section-title">Monitored Users</span>
-          <button class="refresh-btn" onclick="loadWatchlist()" title="Refresh">↻</button>
-        </div>
+        <!-- TikTok Section -->
+        <div style="margin-bottom:36px;">
+          <div class="section-header" style="margin-bottom:14px;">
+            <span class="section-title" style="color:var(--accent);">◉ TikTok</span>
+            <button class="btn btn-primary" style="padding:6px 14px;font-size:10px;" onclick="openAddModal()">+ Add User</button>
+          </div>
 
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>User</th>
-                <th>Status</th>
-                <th>Mode</th>
-                <th>TikTok Live</th>
-                <th>Last Seen Live</th>
-                <th>Recordings</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="watchlist-tbody">
-              <tr>
-                <td colspan="7">
+          <div class="stats-row" id="stats-row" style="margin-bottom:18px;">
+            <div class="stat-card red">
+              <div class="stat-label">Monitored</div>
+              <div class="stat-value" id="stat-total">—</div>
+            </div>
+            <div class="stat-card red">
+              <div class="stat-label">Recording</div>
+              <div class="stat-value" id="stat-recording">—</div>
+            </div>
+            <div class="stat-card green">
+              <div class="stat-label">Saved Clips</div>
+              <div class="stat-value" id="stat-clips">—</div>
+            </div>
+            <div class="stat-card blue">
+              <div class="stat-label">Disk Used</div>
+              <div class="stat-value" id="stat-disk">—</div>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Status</th>
+                  <th>Mode</th>
+                  <th>TikTok Live</th>
+                  <th>Last Seen Live</th>
+                  <th>Recordings</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="watchlist-tbody">
+                <tr><td colspan="7">
                   <div class="empty-state">
                     <div class="empty-icon">◉</div>
                     <div class="empty-text">Loading watchlist...</div>
                   </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                </td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
+
+        <!-- YouTube Section -->
+        <div>
+          <div class="section-header" style="margin-bottom:14px;">
+            <span class="section-title" style="color:#ff4444;">▶ YouTube</span>
+            <button class="btn btn-primary" style="padding:6px 14px;font-size:10px;background:#ff4444;" onclick="openAddYTModal()">+ Add Channel</button>
+          </div>
+
+          <div class="stats-row" style="margin-bottom:18px;">
+            <div class="stat-card red">
+              <div class="stat-label">Monitored</div>
+              <div class="stat-value" id="yt-stat-total">—</div>
+            </div>
+            <div class="stat-card red">
+              <div class="stat-label">Recording</div>
+              <div class="stat-value" id="yt-stat-recording">—</div>
+            </div>
+            <div class="stat-card green">
+              <div class="stat-label">Saved Clips</div>
+              <div class="stat-value" id="yt-stat-clips">—</div>
+            </div>
+            <div class="stat-card blue">
+              <div class="stat-label">Disk Used</div>
+              <div class="stat-value" id="yt-stat-disk">—</div>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Channel</th>
+                  <th>Status</th>
+                  <th>Interval</th>
+                  <th>YT Live</th>
+                  <th>Last Seen Live</th>
+                  <th>Recordings</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="yt-watchlist-tbody">
+                <tr><td colspan="7">
+                  <div class="empty-state">
+                    <div class="empty-icon">▶</div>
+                    <div class="empty-text">No YouTube channels monitored yet.</div>
+                  </div>
+                </td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
       </div>
 
-      <!-- ── RECORDINGS PANEL ── -->
+      <!-- ── TK RECORDINGS PANEL ── -->
       <div class="panel" id="panel-recordings">
         <div class="section-header">
-          <span class="section-title">Saved Recordings</span>
+          <span class="section-title">TikTok Recordings</span>
           <div style="display:flex;gap:10px;align-items:center;">
             <label style="display:flex;gap:6px;align-items:center;font-family:var(--mono);font-size:11px;color:var(--text2);cursor:pointer;margin:0;">
               <input type="checkbox" id="select-all-recordings" style="width:14px;height:14px;accent-color:var(--accent);" onchange="toggleSelectAll(this)">
@@ -134,13 +189,26 @@
     <button class="action-btn" onclick="clearSelection()" style="margin-left:4px;">✕ Clear</button>
   </div>
 
+      <!-- ── YT RECORDINGS PANEL ── -->
+      <div class="panel" id="panel-yt-recordings">
+        <div class="section-header">
+          <span class="section-title">YouTube Recordings</span>
+          <button class="refresh-btn" onclick="loadYTRecordings()" title="Refresh">↻</button>
+        </div>
+        <div class="rec-grid" id="yt-rec-grid">
+          <div class="empty-state">
+            <div class="empty-icon">▶</div>
+            <div class="empty-text">No YouTube recordings yet.</div>
+          </div>
+        </div>
+      </div>
+
       <!-- ── DOWNLOADER PANEL ── -->
       <div class="panel" id="panel-downloader">
         <div class="section-header">
           <span class="section-title">TikTok Video Downloader</span>
         </div>
 
-        <!-- Input area -->
         <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px;">
           <textarea id="dl-urls-input" placeholder="Paste one or more TikTok URLs, one per line... or drag &amp; drop a .txt file"
             style="width:100%;min-height:120px;background:var(--card);border:1px solid var(--border2);border-radius:var(--radius);
@@ -159,7 +227,6 @@
           </div>
         </div>
 
-        <!-- Progress / Results area -->
         <div id="dl-results" style="display:none;">
           <div class="section-header" style="margin-bottom:10px;">
             <span class="section-title" style="font-size:12px;">Batch Progress</span>
@@ -215,10 +282,10 @@
   </main>
 </div>
 
-<!-- ADD USER MODAL -->
+<!-- ADD TIKTOK USER MODAL -->
 <div class="modal-backdrop" id="add-modal">
   <div class="modal">
-    <div class="modal-title">Add User to Watchlist</div>
+    <div class="modal-title">Add TikTok User</div>
 
     <div class="form-group">
       <label>TikTok Username</label>
@@ -270,9 +337,46 @@
   </div>
 </div>
 
+<!-- ADD YOUTUBE CHANNEL MODAL -->
+<div class="modal-backdrop" id="yt-add-modal">
+  <div class="modal">
+    <div class="modal-title" style="color:#ff4444;">▶ Add YouTube Channel</div>
+
+    <div class="form-group">
+      <label>Channel Handle or ID</label>
+      <input type="text" id="yt-f-username" placeholder="@channelname or UCxxxxxxx" autocomplete="off" />
+      <div class="form-hint">Use @handle or full channel ID starting with UC</div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>Check Interval (min)</label>
+        <input type="number" id="yt-f-interval" value="5" min="1" />
+      </div>
+      <div class="form-group">
+        <label>File Prefix <span style="color:var(--muted);font-size:9px;">(optional)</span></label>
+        <input type="text" id="yt-f-prefix" placeholder="e.g. channelname" />
+        <div class="form-hint">Used in output filename, defaults to channel name</div>
+      </div>
+    </div>
+
+    <div class="form-group" style="margin-top:4px;">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;">
+        <input type="checkbox" id="yt-f-record" checked style="width:15px;height:15px;accent-color:#ff4444;flex-shrink:0;">
+        Record when live
+      </label>
+      <div class="form-hint">When unchecked, channel is monitored but not recorded</div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeAddYTModal()">Cancel</button>
+      <button class="btn btn-primary" style="background:#ff4444;" onclick="submitAddYTUser()">Add Channel</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div id="toast-container"></div>
-
 
 <!-- VIDEO MODAL -->
 <div class="vid-modal-overlay" id="vid-modal-overlay" onclick="closeVideoModal(event)">
@@ -288,6 +392,7 @@
 </div>
 
 <script src="https://cdn.plyr.io/3.8.3/plyr.js"></script>
+<script src="/static/js/youtube.js"></script>
 <script src="/static/js/tiktok.js"></script>
 <script src="/static/js/core.js"></script>
 </body>
