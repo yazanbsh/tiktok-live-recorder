@@ -65,23 +65,28 @@ class YTUpdateUserRequest(BaseModel):
 
 def _is_yt_live(channel_url: str) -> bool:
     """
-    Use yt-dlp --simulate to check if a channel is currently live.
+    Check if a YouTube channel is currently live using yt-dlp.
+    Uses --print is_live to get a reliable live status check.
     Returns True if live, False otherwise.
     """
     try:
         result = subprocess.run(
             [
                 YTDLP_BIN,
-                "--simulate",
-                "--quiet",
-                f"--js-runtimes",
+                "--js-runtimes",
                 f"deno:{DENO_BIN}",
+                "--no-download",
+                "--print",
+                "is_live",
+                "--cookies",
+                str(COOKIES_FILE),
                 f"{channel_url}/live",
             ],
             capture_output=True,
+            text=True,
             timeout=30,
         )
-        return result.returncode == 0
+        return result.stdout.strip().lower() == "true"
     except Exception:
         return False
 
@@ -266,10 +271,32 @@ def _count_yt_recordings(username: str) -> int:
     return len(list(user_dir.glob("*.mp4")))
 
 
+def _extract_username(raw: str) -> str:
+    """
+    Extract clean username/ID from whatever the user pastes:
+    - https://www.youtube.com/@handle  → handle
+    - https://www.youtube.com/channel/UCxxx → UCxxx
+    - @handle → handle
+    - handle → handle
+    - UCxxx → UCxxx
+    """
+    import re
+
+    raw = raw.strip()
+    # full channel URL
+    m = re.search(r"youtube\.com/channel/([A-Za-z0-9_-]+)", raw)
+    if m:
+        return m.group(1)
+    # full handle URL
+    m = re.search(r"youtube\.com/@([A-Za-z0-9_.-]+)", raw)
+    if m:
+        return m.group(1)
+    # bare @handle or handle
+    return raw.lstrip("@")
+
+
 def _build_channel_url(username: str) -> str:
-    """Build the channel URL from a handle or channel ID."""
-    username = username.lstrip("@")
-    # if it looks like a channel ID (starts with UC and is long) use /channel/
+    """Build the canonical channel URL from a clean username/ID."""
     if username.startswith("UC") and len(username) > 20:
         return f"https://www.youtube.com/channel/{username}"
     return f"https://www.youtube.com/@{username}"
@@ -289,7 +316,7 @@ def list_yt_users():
 
 @router.post("/api/yt/users", status_code=201)
 def add_yt_user(req: YTAddUserRequest):
-    username = req.username.lstrip("@").strip()
+    username = _extract_username(req.username)
     if not username:
         raise HTTPException(400, "Username cannot be empty")
     with _state_lock:
