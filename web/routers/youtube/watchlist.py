@@ -1,7 +1,6 @@
 """
 YouTube live watchlist — monitor channels, record when live using yt-dlp + deno.
 """
-
 import json
 import subprocess
 import threading
@@ -13,19 +12,15 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 
 from ..shared.config import (
-    YT_WATCHLIST_FILE,
-    YT_RECORDINGS_DIR,
-    YTDLP_BIN,
-    DENO_BIN,
-    COOKIES_FILE,
+    YT_WATCHLIST_FILE, YT_RECORDINGS_DIR, YTDLP_BIN, DENO_BIN, COOKIES_FILE
 )
 
 router = APIRouter()
 
 # ── State ─────────────────────────────────────────────────────────────────────
-_state_lock = threading.Lock()
-_workers: dict[str, threading.Thread] = {}
-_stop_events: dict[str, threading.Event] = {}
+_state_lock   = threading.Lock()
+_workers:     dict[str, threading.Thread] = {}
+_stop_events: dict[str, threading.Event]  = {}
 
 
 def _load_yt_watchlist() -> dict:
@@ -36,70 +31,73 @@ def _load_yt_watchlist() -> dict:
             pass
     return {}
 
-
 def _save_yt_watchlist(data: dict):
     YT_WATCHLIST_FILE.write_text(json.dumps(data, indent=2))
-
 
 yt_watchlist: dict = _load_yt_watchlist()
 
 
 # ── Models ────────────────────────────────────────────────────────────────────
 
-
 class YTAddUserRequest(BaseModel):
-    username: str  # YouTube channel handle e.g. @channelname or channel ID
-    interval: int = 5  # polling interval in minutes
+    username:    str            # YouTube channel handle e.g. @channelname or channel ID
+    interval:    int   = 5      # polling interval in minutes
     file_prefix: Optional[str] = None  # optional filename prefix
-    record: bool = True
-
+    record:      bool  = True
 
 class YTUpdateUserRequest(BaseModel):
-    interval: Optional[int] = None
-    file_prefix: Optional[str] = None
-    record: Optional[bool] = None
+    interval:    Optional[int]  = None
+    file_prefix: Optional[str]  = None
+    record:      Optional[bool] = None
 
 
 # ── Live detection ────────────────────────────────────────────────────────────
 
-
 def _is_yt_live(channel_url: str) -> bool:
     """
     Check if a YouTube channel is currently live using yt-dlp.
-    Uses --print is_live to get a reliable live status check.
+    Uses --dump-json with -I0 to fetch metadata and check is_live field.
     Returns True if live, False otherwise.
     """
     try:
         result = subprocess.run(
             [
                 YTDLP_BIN,
-                "--js-runtimes",
-                f"deno:{DENO_BIN}",
-                "--no-download",
-                "--print",
-                "is_live",
-                "--cookies",
-                str(COOKIES_FILE),
+                "--js-runtimes", f"deno:{DENO_BIN}",
+                "--dump-json",
+                "-I", "1",          # only fetch first entry metadata
+                "--cookies", str(COOKIES_FILE),
+                "--no-warnings",
+                "--quiet",
                 f"{channel_url}/live",
             ],
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=45,
         )
-        return result.stdout.strip().lower() == "true"
+        if result.returncode != 0 or not result.stdout.strip():
+            return False
+        import json as _json
+        # yt-dlp may output multiple JSON lines, take the first valid one
+        for line in result.stdout.strip().splitlines():
+            try:
+                data = _json.loads(line)
+                is_live = data.get("is_live")
+                if is_live is True:
+                    return True
+                if is_live is False:
+                    return False
+            except Exception:
+                continue
+        return False
     except Exception:
         return False
 
 
 # ── Recording ─────────────────────────────────────────────────────────────────
 
-
-def _start_yt_recording(
-    username: str,
-    channel_url: str,
-    file_prefix: Optional[str],
-    stop_event: threading.Event,
-):
+def _start_yt_recording(username: str, channel_url: str,
+                         file_prefix: Optional[str], stop_event: threading.Event):
     """
     Launch yt-dlp as a subprocess to record the live stream.
     Monitors the stop_event to terminate the process cleanly.
@@ -112,23 +110,16 @@ def _start_yt_recording(
 
     cmd = [
         YTDLP_BIN,
-        "--js-runtimes",
-        f"deno:{DENO_BIN}",
-        "-f",
-        "bv*+ba/b",
+        "--js-runtimes", f"deno:{DENO_BIN}",
+        "-f", "bv*+ba/b",
         "--live-from-start",
         "--hls-use-mpegts",
-        "--socket-timeout",
-        "30",
+        "--socket-timeout", "30",
         "--skip-unavailable-fragments",
-        "--concurrent-fragments",
-        "4",
-        "--merge-output-format",
-        "mp4",
-        "-o",
-        output_template,
-        "--cookies",
-        str(COOKIES_FILE),
+        "--concurrent-fragments", "4",
+        "--merge-output-format", "mp4",
+        "-o", output_template,
+        "--cookies", str(COOKIES_FILE),
         f"{channel_url}/live",
     ]
 
@@ -153,19 +144,18 @@ def _start_yt_recording(
 
 # ── Worker ────────────────────────────────────────────────────────────────────
 
-
 def _yt_recording_worker(username: str, stop_event: threading.Event):
-    entry = yt_watchlist.get(username, {})
-    interval = entry.get("interval", 5)
-    channel_url = entry.get("channel_url", "")
-    file_prefix = entry.get("file_prefix")
+    entry        = yt_watchlist.get(username, {})
+    interval     = entry.get("interval", 5)
+    channel_url  = entry.get("channel_url", "")
+    file_prefix  = entry.get("file_prefix")
 
     while not stop_event.is_set():
         try:
             # refresh entry in case it was updated
             with _state_lock:
-                entry = yt_watchlist.get(username, {})
-                interval = entry.get("interval", 5)
+                entry       = yt_watchlist.get(username, {})
+                interval    = entry.get("interval", 5)
                 file_prefix = entry.get("file_prefix")
                 should_record = entry.get("record", True)
 
@@ -174,9 +164,7 @@ def _yt_recording_worker(username: str, stop_event: threading.Event):
             if is_live:
                 with _state_lock:
                     if username in yt_watchlist:
-                        yt_watchlist[username]["last_seen_live"] = (
-                            datetime.utcnow().isoformat()
-                        )
+                        yt_watchlist[username]["last_seen_live"] = datetime.utcnow().isoformat()
                         yt_watchlist[username]["last_error"] = None
                         _save_yt_watchlist(yt_watchlist)
 
@@ -242,7 +230,6 @@ def _start_yt_worker(username: str):
     t.start()
     _workers[username] = t
 
-
 def _stop_yt_worker(username: str):
     if username in _stop_events:
         _stop_events[username].set()
@@ -251,7 +238,6 @@ def _stop_yt_worker(username: str):
 
 
 # ── Startup ───────────────────────────────────────────────────────────────────
-
 
 def startup_yt_watchlist():
     """Called from server.py on app startup."""
@@ -263,13 +249,11 @@ def startup_yt_watchlist():
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-
 def _count_yt_recordings(username: str) -> int:
     user_dir = YT_RECORDINGS_DIR / username
     if not user_dir.exists():
         return 0
     return len(list(user_dir.glob("*.mp4")))
-
 
 def _extract_username(raw: str) -> str:
     """
@@ -281,7 +265,6 @@ def _extract_username(raw: str) -> str:
     - UCxxx → UCxxx
     """
     import re
-
     raw = raw.strip()
     # full channel URL
     m = re.search(r"youtube\.com/channel/([A-Za-z0-9_-]+)", raw)
@@ -294,7 +277,6 @@ def _extract_username(raw: str) -> str:
     # bare @handle or handle
     return raw.lstrip("@")
 
-
 def _build_channel_url(username: str) -> str:
     """Build the canonical channel URL from a clean username/ID."""
     if username.startswith("UC") and len(username) > 20:
@@ -303,7 +285,6 @@ def _build_channel_url(username: str) -> str:
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
-
 
 @router.get("/api/yt/users")
 def list_yt_users():
@@ -324,15 +305,15 @@ def add_yt_user(req: YTAddUserRequest):
             raise HTTPException(409, f"@{username} is already in the YT watchlist")
         channel_url = _build_channel_url(username)
         entry = {
-            "username": username,
-            "channel_url": channel_url,
-            "interval": req.interval,
-            "file_prefix": req.file_prefix,
-            "record": req.record,
-            "added_at": datetime.utcnow().isoformat(),
-            "status": "monitoring",
+            "username":       username,
+            "channel_url":    channel_url,
+            "interval":       req.interval,
+            "file_prefix":    req.file_prefix,
+            "record":         req.record,
+            "added_at":       datetime.utcnow().isoformat(),
+            "status":         "monitoring",
             "last_seen_live": None,
-            "last_error": None,
+            "last_error":     None,
         }
         yt_watchlist[username] = entry
         _save_yt_watchlist(yt_watchlist)
@@ -360,12 +341,9 @@ def update_yt_user(username: str, req: YTUpdateUserRequest):
         if username not in yt_watchlist:
             raise HTTPException(404, f"@{username} not found in YT watchlist")
         entry = yt_watchlist[username]
-        if req.interval is not None:
-            entry["interval"] = req.interval
-        if req.file_prefix is not None:
-            entry["file_prefix"] = req.file_prefix
-        if req.record is not None:
-            entry["record"] = req.record
+        if req.interval    is not None: entry["interval"]    = req.interval
+        if req.file_prefix is not None: entry["file_prefix"] = req.file_prefix
+        if req.record      is not None: entry["record"]      = req.record
         _save_yt_watchlist(yt_watchlist)
     return entry
 
@@ -391,14 +369,12 @@ def list_yt_recordings():
     for f in YT_RECORDINGS_DIR.rglob("*.mp4"):
         stat = f.stat()
         username = f.parent.name if f.parent != YT_RECORDINGS_DIR else "unknown"
-        files.append(
-            {
-                "filename": f.name,
-                "username": username,
-                "size_mb": round(stat.st_size / 1024 / 1024, 2),
-                "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-            }
-        )
+        files.append({
+            "filename":   f.name,
+            "username":   username,
+            "size_mb":    round(stat.st_size / 1024 / 1024, 2),
+            "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+        })
     files.sort(key=lambda x: x["created_at"], reverse=True)
     return files
 
@@ -406,7 +382,6 @@ def list_yt_recordings():
 @router.get("/api/yt/recordings/{username}/{filename}")
 def serve_yt_recording(username: str, filename: str, inline: bool = False):
     from fastapi.responses import FileResponse
-
     file_path = YT_RECORDINGS_DIR / username / filename
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(404, "File not found")
@@ -414,22 +389,13 @@ def serve_yt_recording(username: str, filename: str, inline: bool = False):
         file_path.relative_to(YT_RECORDINGS_DIR)
     except ValueError:
         raise HTTPException(403, "Access denied")
-    disposition = (
-        f'inline; filename="{filename}"'
-        if inline
-        else f'attachment; filename="{filename}"'
-    )
-    return FileResponse(
-        path=str(file_path),
-        filename=filename,
-        media_type="video/mp4",
-        headers={"Content-Disposition": disposition},
-    )
+    disposition = f'inline; filename="{filename}"' if inline else f'attachment; filename="{filename}"'
+    return FileResponse(path=str(file_path), filename=filename, media_type="video/mp4",
+                        headers={"Content-Disposition": disposition})
 
 
 class YTBatchDeleteRequest(BaseModel):
     files: list[str]
-
 
 @router.delete("/api/yt/recordings")
 def batch_delete_yt_recordings(req: YTBatchDeleteRequest):
@@ -458,20 +424,16 @@ def batch_delete_yt_recordings(req: YTBatchDeleteRequest):
 @router.get("/api/yt/stats")
 def get_yt_stats():
     with _state_lock:
-        total = len(yt_watchlist)
-        recording = sum(
-            1 for e in yt_watchlist.values() if e.get("status") == "recording"
-        )
-        monitoring = sum(
-            1 for e in yt_watchlist.values() if e.get("status") == "monitoring"
-        )
+        total     = len(yt_watchlist)
+        recording = sum(1 for e in yt_watchlist.values() if e.get("status") == "recording")
+        monitoring= sum(1 for e in yt_watchlist.values() if e.get("status") == "monitoring")
     rec_files = list(YT_RECORDINGS_DIR.rglob("*.mp4"))
-    disk_mb = sum(f.stat().st_size for f in rec_files) / 1024 / 1024
-    total_recs = len(rec_files)
+    disk_mb   = sum(f.stat().st_size for f in rec_files) / 1024 / 1024
+    total_recs= len(rec_files)
     return {
-        "total_users": total,
+        "total_users":         total,
         "currently_recording": recording,
-        "monitoring": monitoring,
-        "total_recordings": total_recs,
-        "disk_used_mb": round(disk_mb, 1),
+        "monitoring":          monitoring,
+        "total_recordings":    total_recs,
+        "disk_used_mb":        round(disk_mb, 1),
     }
