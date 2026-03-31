@@ -54,6 +54,7 @@ function renderYTUserRow(u) {
           title="${u.record !== false ? 'Recording enabled — click to disable' : 'Recording disabled — click to enable'}">
           ${u.record !== false ? '⏺ REC' : '⏺ REC OFF'}
         </button>
+        <button class="action-btn" onclick="openEditYTModal('${u.username}', ${u.interval}, '${u.file_prefix || ''}', ${u.record !== false})">✎ Edit</button>
         <button class="action-btn danger" onclick="removeYTUser('${u.username}')">✕ Remove</button>
       </div>
     </td>
@@ -162,6 +163,39 @@ async function loadYTStats() {
     if (el('yt-stat-clips'))     el('yt-stat-clips').textContent     = s.total_recordings;
     if (el('yt-stat-disk'))      el('yt-stat-disk').textContent      = s.disk_used_mb + ' MB';
   } catch(e) {}
+}
+
+// ── Edit YT User modal ───────────────────────────────────────────────────────
+
+function openEditYTModal(username, interval, filePrefix, record) {
+  document.getElementById('yt-edit-username').textContent = '@' + username;
+  document.getElementById('yt-edit-username').dataset.username = username;
+  document.getElementById('yt-edit-interval').value = interval || 5;
+  document.getElementById('yt-edit-prefix').value = filePrefix || '';
+  document.getElementById('yt-edit-record').checked = record !== false;
+  document.getElementById('yt-edit-modal').classList.add('open');
+}
+
+function closeEditYTModal() {
+  document.getElementById('yt-edit-modal').classList.remove('open');
+}
+
+async function submitEditYTUser() {
+  const username = document.getElementById('yt-edit-username').dataset.username;
+  const payload = {
+    interval:    parseInt(document.getElementById('yt-edit-interval').value) || 5,
+    file_prefix: document.getElementById('yt-edit-prefix').value.trim() || null,
+    record:      document.getElementById('yt-edit-record').checked,
+  };
+  try {
+    await apiFetch(`/api/yt/users/${username}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    toast(`@${username} updated`, 'success');
+    closeEditYTModal();
+    loadYTWatchlist();
+  } catch(e) { toast(`Error: ${e.message}`, 'error'); }
 }
 
 // ── YT Recordings ─────────────────────────────────────────────────────────────

@@ -375,6 +375,41 @@
   </div>
 </div>
 
+<!-- EDIT YOUTUBE CHANNEL MODAL -->
+<div class="modal-backdrop" id="yt-edit-modal">
+  <div class="modal">
+    <div class="modal-title" style="color:#ff4444;">✎ Edit YouTube Channel</div>
+
+    <div class="form-group">
+      <label>Channel</label>
+      <div id="yt-edit-username" style="font-family:var(--mono);font-size:13px;color:var(--text);padding:8px 0;"></div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>Check Interval (min)</label>
+        <input type="number" id="yt-edit-interval" value="5" min="1" />
+      </div>
+      <div class="form-group">
+        <label>File Prefix <span style="color:var(--muted);font-size:9px;">(optional)</span></label>
+        <input type="text" id="yt-edit-prefix" placeholder="e.g. channelname" />
+      </div>
+    </div>
+
+    <div class="form-group" style="margin-top:4px;">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;">
+        <input type="checkbox" id="yt-edit-record" checked style="width:15px;height:15px;accent-color:#ff4444;flex-shrink:0;">
+        Record when live
+      </label>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeEditYTModal()">Cancel</button>
+      <button class="btn btn-primary" style="background:#ff4444;" onclick="submitEditYTUser()">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div id="toast-container"></div>
 
