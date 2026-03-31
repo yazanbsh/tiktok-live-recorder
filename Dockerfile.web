@@ -10,9 +10,7 @@ RUN apk add --no-cache \
     gcc \
     g++ \
     libffi-dev \
-    musl-dev \
-    unzip \
-    curl
+    musl-dev
 
 WORKDIR /app
 
@@ -23,17 +21,6 @@ RUN uv sync --frozen --no-dev --no-install-project
 # Install web UI deps from requirements file
 COPY web/requirements-web.txt ./web/requirements-web.txt
 RUN uv pip install --python .venv/bin/python -r web/requirements-web.txt
-
-# Download yt-dlp binary
-RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux \
-    -o /app/yt-dlp && chmod +x /app/yt-dlp
-
-# Download and unzip deno
-RUN curl -L https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip \
-    -o /tmp/deno.zip && \
-    unzip /tmp/deno.zip -d /app && \
-    chmod +x /app/deno && \
-    rm /tmp/deno.zip
 
 # Copy source code and web UI
 COPY src/ ./src/
@@ -48,10 +35,8 @@ ENV PATH="/app/.venv/bin:$PATH"
 # All persistent data lives here — bind-mount this to the host
 ENV DATA_DIR=/data
 ENV WEBUI_PORT=8000
-ENV YTDLP_BIN=/app/yt-dlp
-ENV DENO_BIN=/app/deno
 
-RUN apk add --no-cache ffmpeg bash
+RUN apk add --no-cache ffmpeg bash yt-dlp deno
 
 # Create non-root user
 RUN addgroup -g 1000 appuser && \
@@ -62,8 +47,6 @@ WORKDIR /app
 COPY --from=builder /app/.venv        /app/.venv
 COPY --from=builder /app/src          ./src
 COPY --from=builder /app/web          ./web
-COPY --from=builder /app/yt-dlp       /app/yt-dlp
-COPY --from=builder /app/deno         /app/deno
 COPY entrypoint.web.sh                ./entrypoint.web.sh
 
 # Create /data dirs with correct ownership
