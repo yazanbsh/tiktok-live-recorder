@@ -104,6 +104,53 @@ function toast(msg, type = 'info') {
   setTimeout(() => el.remove(), 3500);
 }
 
+// ── View mode (list/grid) per section ────────────────────────────────────────
+// { sectionKey: 'list' | 'thumb' }
+const _sectionViewMode = {};
+
+function toggleViewMode(sectionKey, reloadFn) {
+  _sectionViewMode[sectionKey] = _sectionViewMode[sectionKey] === 'thumb' ? 'list' : 'thumb';
+  window[reloadFn]();
+}
+
+function _viewToggleBtnHtml(sectionKey, reloadFn) {
+  const isThumb = _sectionViewMode[sectionKey] === 'thumb';
+  return `<button class="rec-btn" style="padding:2px 7px;font-size:10px;
+    ${isThumb ? 'color:var(--text);border-color:var(--text2);' : 'color:var(--muted);border-color:var(--border);'}"
+    onclick="_cycleViewMode('${sectionKey}','${reloadFn}')" title="Toggle view">
+    ${isThumb ? '⊞ Grid' : '≡ List'}
+  </button>`;
+}
+
+function _cycleViewMode(sectionKey, reloadFn) {
+  _sectionViewMode[sectionKey] = _sectionViewMode[sectionKey] === 'thumb' ? 'list' : 'thumb';
+  window[reloadFn]();
+}
+
+function _buildFileCard(f, key, thumbUrl, playType, sectionKey, onSelect, onDownload, onDelete) {
+  const isThumb = _sectionViewMode[sectionKey] === 'thumb';
+  const isSelected = typeof onSelect === 'string' ? false : false; // selection handled by caller
+
+  if (isThumb) {
+    return `<div class="rec-card thumb-card" data-key="${key}" style="padding:0;overflow:hidden;">
+      <div class="thumb-img-wrap" onclick="${onSelect}">
+        <img class="thumb-img" src="${thumbUrl}"
+          onerror="this.parentElement.innerHTML='<div class=thumb-placeholder>▶</div>'"
+          loading="lazy" />
+      </div>
+      <div style="padding:10px 10px 8px;">
+        <div class="rec-filename" style="font-size:10px;margin-bottom:6px;">${f.filename}</div>
+        <div class="rec-meta" style="margin-bottom:6px;">
+          <span>${f.size_mb} MB</span>
+          <span>${new Date(f.created_at).toLocaleDateString()}</span>
+        </div>
+        <div class="rec-actions" onclick="event.stopPropagation()">${onDownload}${onDelete}</div>
+      </div>
+    </div>`;
+  }
+  return null; // list mode handled by each module
+}
+
 // ── Video Modal (shared) ──────────────────────────────────────────────────────
 let _plyrInstance = null;
 

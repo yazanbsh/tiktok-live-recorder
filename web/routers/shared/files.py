@@ -11,7 +11,17 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from .config import RECORDINGS_DIR, LOG_FILE, DATA_DIR
+import subprocess
+from .config import (
+    RECORDINGS_DIR,
+    LOG_FILE,
+    DATA_DIR,
+    THUMB_RECORDINGS_DIR,
+    THUMB_YT_RECORDINGS_DIR,
+    THUMB_DOWNLOADS_DIR,
+    YT_RECORDINGS_DIR,
+    DOWNLOADS_DIR,
+)
 
 router = APIRouter()
 
@@ -87,6 +97,72 @@ def batch_delete_recordings(req: BatchDeleteRecordingsRequest):
         except Exception as e:
             failed.append({"file": entry, "error": str(e)})
     return {"deleted": deleted, "failed": failed}
+
+
+# ── Thumbnails ───────────────────────────────────────────────────────────────
+
+
+def _generate_thumbnail(video_path: Path, thumb_path: Path) -> bool:
+    """Generate a thumbnail at 5s from video using ffmpeg. Returns True on success."""
+    try:
+        thumb_path.parent.mkdir(parents=True, exist_ok=True)
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(video_path),
+                "-ss",
+                "00:00:05",
+                "-vframes",
+                "1",
+                "-vf",
+                "scale=320:-1",
+                str(thumb_path),
+            ],
+            capture_output=True,
+            timeout=30,
+        )
+        return result.returncode == 0 and thumb_path.exists()
+    except Exception:
+        return False
+
+
+def _thumb_endpoint(video_dir: Path, thumb_dir: Path, username: str, filename: str):
+    """Shared thumbnail serve/generate logic."""
+    video_path = video_dir / username / filename
+    if not video_path.exists():
+        raise HTTPException(404, "Video not found")
+    try:
+        video_path.relative_to(video_dir)
+    except ValueError:
+        raise HTTPException(403, "Access denied")
+
+    thumb_name = Path(filename).stem + ".jpg"
+    thumb_path = thumb_dir / username / thumb_name
+
+    if not thumb_path.exists():
+        if not _generate_thumbnail(video_path, thumb_path):
+            raise HTTPException(500, "Failed to generate thumbnail")
+
+    return FileResponse(path=str(thumb_path), media_type="image/jpeg")
+
+
+@router.get("/api/recordings/{username}/{filename}/thumbnail")
+def recording_thumbnail(username: str, filename: str):
+    return _thumb_endpoint(RECORDINGS_DIR, THUMB_RECORDINGS_DIR, username, filename)
+
+
+@router.get("/api/yt/recordings/{username}/{filename}/thumbnail")
+def yt_recording_thumbnail(username: str, filename: str):
+    return _thumb_endpoint(
+        YT_RECORDINGS_DIR, THUMB_YT_RECORDINGS_DIR, username, filename
+    )
+
+
+@router.get("/api/tiktok/downloads/{username}/{filename}/thumbnail")
+def download_thumbnail(username: str, filename: str):
+    return _thumb_endpoint(DOWNLOADS_DIR, THUMB_DOWNLOADS_DIR, username, filename)
 
 
 # ── Logs ──────────────────────────────────────────────────────────────────────

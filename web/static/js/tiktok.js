@@ -428,31 +428,57 @@ async function loadRecordings() {
           </span>
           <span onclick="event.stopPropagation()" style="display:flex;gap:4px;margin-left:8px;">
             ${_sortBtnHtml('rec_' + username, recSort, 'loadRecordings')}
+            ${_viewToggleBtnHtml('rec_' + username, 'loadRecordings')}
           </span>
         </div>
         <div class="rec-section-body">`;
+      const recIsThumb = _sectionViewMode['rec_' + username] === 'thumb';
       for (const f of sortedRecs) {
         const key = `${f.username}/${f.filename}`;
         const isSelected = !!selectedFiles[key];
-        html += `<div class="rec-card${isSelected ? ' selected' : ''}" data-key="${key}"
-            onclick="toggleFile('${key}', !selectedFiles['${key}']); document.querySelector('.rec-checkbox[data-key=\'${key}\']').checked=!!selectedFiles['${key}']; updateSectionCheckbox('${username}')">
-          <div class="rec-card-top">
-            <input type="checkbox" class="rec-checkbox" data-key="${key}" data-user="${username}" ${isSelected ? 'checked' : ''}
-              onclick="event.stopPropagation()"
-              onchange="toggleFile('${key}', this.checked); updateSectionCheckbox('${username}')">
-            <a class="rec-filename" href="/api/recordings/${f.username}/${encodeURIComponent(f.filename)}?inline=true"
-              target="_blank" onclick="event.stopPropagation()">${f.filename}</a>
-          </div>
-          <div class="rec-meta">
-            <span>${f.size_mb} MB</span>
-            <span>${new Date(f.created_at).toLocaleDateString()}</span>
-          </div>
-          <div class="rec-actions" onclick="event.stopPropagation()">
-            <button class="rec-btn rec-btn-play" onclick="openVideoModal('${f.username}','${f.filename}')">▶ Play</button>
-            <button class="rec-btn rec-btn-dl"  onclick="singleDownload('${f.username}','${f.filename}')">↓ Download</button>
-            <button class="rec-btn rec-btn-del" onclick="singleDelete('${f.username}','${f.filename}')">✕ Delete</button>
-          </div>
-        </div>`;
+        const thumbUrl = `/api/recordings/${f.username}/${encodeURIComponent(f.filename)}/thumbnail`;
+        if (recIsThumb) {
+          html += `<div class="rec-card thumb-card${isSelected ? ' selected' : ''}" data-key="${key}">
+            <div class="thumb-img-wrap" onclick="openVideoModal('${f.username}','${f.filename}')">
+              <img class="thumb-img" src="${thumbUrl}"
+                onerror="this.parentElement.innerHTML='<div class=thumb-placeholder>▶</div>'"
+                loading="lazy" />
+            </div>
+            <div style="padding:10px 10px 8px;">
+              <a class="rec-filename" href="/api/recordings/${f.username}/${encodeURIComponent(f.filename)}?inline=true"
+                target="_blank" onclick="event.stopPropagation()" style="font-size:10px;">${f.filename}</a>
+              <div class="rec-meta" style="margin:4px 0;">
+                <span>${f.size_mb} MB</span>
+                <span>${new Date(f.created_at).toLocaleDateString()}</span>
+              </div>
+              <div class="rec-actions" onclick="event.stopPropagation()">
+                <button class="rec-btn rec-btn-play" onclick="openVideoModal('${f.username}','${f.filename}')">▶ Play</button>
+                <button class="rec-btn rec-btn-dl"  onclick="singleDownload('${f.username}','${f.filename}')">↓ Download</button>
+                <button class="rec-btn rec-btn-del" onclick="singleDelete('${f.username}','${f.filename}')">✕ Delete</button>
+              </div>
+            </div>
+          </div>`;
+        } else {
+          html += `<div class="rec-card${isSelected ? ' selected' : ''}" data-key="${key}"
+              onclick="toggleFile('${key}', !selectedFiles['${key}']); document.querySelector('.rec-checkbox[data-key=\'${key}\']').checked=!!selectedFiles['${key}']; updateSectionCheckbox('${username}')">
+            <div class="rec-card-top">
+              <input type="checkbox" class="rec-checkbox" data-key="${key}" data-user="${username}" ${isSelected ? 'checked' : ''}
+                onclick="event.stopPropagation()"
+                onchange="toggleFile('${key}', this.checked); updateSectionCheckbox('${username}')">
+              <a class="rec-filename" href="/api/recordings/${f.username}/${encodeURIComponent(f.filename)}?inline=true"
+                target="_blank" onclick="event.stopPropagation()">${f.filename}</a>
+            </div>
+            <div class="rec-meta">
+              <span>${f.size_mb} MB</span>
+              <span>${new Date(f.created_at).toLocaleDateString()}</span>
+            </div>
+            <div class="rec-actions" onclick="event.stopPropagation()">
+              <button class="rec-btn rec-btn-play" onclick="openVideoModal('${f.username}','${f.filename}')">▶ Play</button>
+              <button class="rec-btn rec-btn-dl"  onclick="singleDownload('${f.username}','${f.filename}')">↓ Download</button>
+              <button class="rec-btn rec-btn-del" onclick="singleDelete('${f.username}','${f.filename}')">✕ Delete</button>
+            </div>
+          </div>`;
+        }
       }
       html += `</div></div>`;
     }
@@ -735,25 +761,51 @@ async function loadDownloadsList() {
           </span>
           <span onclick="event.stopPropagation()" style="display:flex;gap:4px;margin-left:8px;">
             ${_sortBtnHtml(dlKey, dlSort, 'loadDownloadsList')}
+            ${_viewToggleBtnHtml(dlKey, 'loadDownloadsList')}
           </span>
         </div>
         <div class="rec-section-body">`;
+      const dlIsThumb = _sectionViewMode[dlKey] === 'thumb';
       for (const f of sortedItems) {
-        html += `<div class="rec-card">
-          <div class="rec-card-top">
-            <a class="rec-filename" href="/api/tiktok/downloads/${f.username}/${encodeURIComponent(f.filename)}?inline=true"
-              target="_blank">${f.filename}</a>
-          </div>
-          <div class="rec-meta">
-            <span>${f.size_mb} MB</span>
-            <span>${new Date(f.created_at).toLocaleDateString()}</span>
-          </div>
-          <div class="rec-actions" onclick="event.stopPropagation()">
-            <button class="rec-btn rec-btn-play" onclick="openVideoModal('${f.username}','${f.filename}','dl')">▶ Play</button>
-            <button class="rec-btn rec-btn-dl" onclick="dlSingleDownload('${f.username}','${f.filename}')">↓ Download</button>
-            <button class="rec-btn rec-btn-del" onclick="dlSingleDelete('${f.username}','${f.filename}')">✕ Delete</button>
-          </div>
-        </div>`;
+        const thumbUrl = `/api/tiktok/downloads/${f.username}/${encodeURIComponent(f.filename)}/thumbnail`;
+        if (dlIsThumb) {
+          html += `<div class="rec-card thumb-card">
+            <div class="thumb-img-wrap" onclick="openVideoModal('${f.username}','${f.filename}','dl')">
+              <img class="thumb-img" src="${thumbUrl}"
+                onerror="this.parentElement.innerHTML='<div class=thumb-placeholder>▶</div>'"
+                loading="lazy" />
+            </div>
+            <div style="padding:10px 10px 8px;">
+              <a class="rec-filename" href="/api/tiktok/downloads/${f.username}/${encodeURIComponent(f.filename)}?inline=true"
+                target="_blank" style="font-size:10px;">${f.filename}</a>
+              <div class="rec-meta" style="margin:4px 0;">
+                <span>${f.size_mb} MB</span>
+                <span>${new Date(f.created_at).toLocaleDateString()}</span>
+              </div>
+              <div class="rec-actions" onclick="event.stopPropagation()">
+                <button class="rec-btn rec-btn-play" onclick="openVideoModal('${f.username}','${f.filename}','dl')">▶ Play</button>
+                <button class="rec-btn rec-btn-dl" onclick="dlSingleDownload('${f.username}','${f.filename}')">↓ Download</button>
+                <button class="rec-btn rec-btn-del" onclick="dlSingleDelete('${f.username}','${f.filename}')">✕ Delete</button>
+              </div>
+            </div>
+          </div>`;
+        } else {
+          html += `<div class="rec-card">
+            <div class="rec-card-top">
+              <a class="rec-filename" href="/api/tiktok/downloads/${f.username}/${encodeURIComponent(f.filename)}?inline=true"
+                target="_blank">${f.filename}</a>
+            </div>
+            <div class="rec-meta">
+              <span>${f.size_mb} MB</span>
+              <span>${new Date(f.created_at).toLocaleDateString()}</span>
+            </div>
+            <div class="rec-actions" onclick="event.stopPropagation()">
+              <button class="rec-btn rec-btn-play" onclick="openVideoModal('${f.username}','${f.filename}','dl')">▶ Play</button>
+              <button class="rec-btn rec-btn-dl" onclick="dlSingleDownload('${f.username}','${f.filename}')">↓ Download</button>
+              <button class="rec-btn rec-btn-del" onclick="dlSingleDelete('${f.username}','${f.filename}')">✕ Delete</button>
+            </div>
+          </div>`;
+        }
       }
       html += `</div></div>`;
     }

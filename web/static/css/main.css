@@ -1,4 +1,4 @@
-  :root {
+:root {
     --bg:        #0a0c0f;
     --surface:   #111418;
     --card:      #161b22;
@@ -616,7 +616,38 @@
   .rec-btn-play { color: #a78bfa; }
   .rec-btn-play:hover { background: rgba(167,139,250,0.1); border-color: #a78bfa; }
 
-  /* ── BATCH ACTION BAR ────────────────────── */
+  /* ── THUMBNAIL GRID ─────────────────────── */
+  .thumb-card {
+    cursor: pointer;
+  }
+  .thumb-img-wrap {
+    width: 100%;
+    aspect-ratio: 16/9;
+    background: #000;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .thumb-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: opacity 0.2s;
+  }
+  .thumb-img:hover { opacity: 0.85; }
+  .thumb-placeholder {
+    color: var(--muted);
+    font-size: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    background: var(--surface);
+  }
+
+/* ── BATCH ACTION BAR ────────────────────── */
   .batch-bar {
     display: none;
     position: fixed;

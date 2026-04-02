@@ -249,25 +249,51 @@ async function loadYTRecordings() {
           </span>
           <span onclick="event.stopPropagation()" style="display:flex;gap:4px;margin-left:8px;">
             ${_sortBtnHtml(key, sort, 'loadYTRecordings')}
+            ${_viewToggleBtnHtml(key, 'loadYTRecordings')}
           </span>
         </div>
         <div class="rec-section-body">`;
+      const ytIsThumb = _sectionViewMode[key] === 'thumb';
       for (const f of sorted) {
-        html += `<div class="rec-card">
-          <div class="rec-card-top">
-            <a class="rec-filename" href="/api/yt/recordings/${f.username}/${encodeURIComponent(f.filename)}?inline=true"
-              target="_blank">${f.filename}</a>
-          </div>
-          <div class="rec-meta">
-            <span>${f.size_mb} MB</span>
-            <span>${new Date(f.created_at).toLocaleDateString()}</span>
-          </div>
-          <div class="rec-actions" onclick="event.stopPropagation()">
-            <button class="rec-btn rec-btn-play" onclick="openVideoModal('${f.username}','${f.filename}','yt')">▶ Play</button>
-            <button class="rec-btn rec-btn-dl" onclick="ytSingleDownload('${f.username}','${f.filename}')">↓ Download</button>
-            <button class="rec-btn rec-btn-del" onclick="ytSingleDelete('${f.username}','${f.filename}')">✕ Delete</button>
-          </div>
-        </div>`;
+        const thumbUrl = `/api/yt/recordings/${f.username}/${encodeURIComponent(f.filename)}/thumbnail`;
+        if (ytIsThumb) {
+          html += `<div class="rec-card thumb-card">
+            <div class="thumb-img-wrap" onclick="openVideoModal('${f.username}','${f.filename}','yt')">
+              <img class="thumb-img" src="${thumbUrl}"
+                onerror="this.parentElement.innerHTML='<div class=thumb-placeholder>▶</div>'"
+                loading="lazy" />
+            </div>
+            <div style="padding:10px 10px 8px;">
+              <a class="rec-filename" href="/api/yt/recordings/${f.username}/${encodeURIComponent(f.filename)}?inline=true"
+                target="_blank" style="font-size:10px;">${f.filename}</a>
+              <div class="rec-meta" style="margin:4px 0;">
+                <span>${f.size_mb} MB</span>
+                <span>${new Date(f.created_at).toLocaleDateString()}</span>
+              </div>
+              <div class="rec-actions" onclick="event.stopPropagation()">
+                <button class="rec-btn rec-btn-play" onclick="openVideoModal('${f.username}','${f.filename}','yt')">▶ Play</button>
+                <button class="rec-btn rec-btn-dl" onclick="ytSingleDownload('${f.username}','${f.filename}')">↓ Download</button>
+                <button class="rec-btn rec-btn-del" onclick="ytSingleDelete('${f.username}','${f.filename}')">✕ Delete</button>
+              </div>
+            </div>
+          </div>`;
+        } else {
+          html += `<div class="rec-card">
+            <div class="rec-card-top">
+              <a class="rec-filename" href="/api/yt/recordings/${f.username}/${encodeURIComponent(f.filename)}?inline=true"
+                target="_blank">${f.filename}</a>
+            </div>
+            <div class="rec-meta">
+              <span>${f.size_mb} MB</span>
+              <span>${new Date(f.created_at).toLocaleDateString()}</span>
+            </div>
+            <div class="rec-actions" onclick="event.stopPropagation()">
+              <button class="rec-btn rec-btn-play" onclick="openVideoModal('${f.username}','${f.filename}','yt')">▶ Play</button>
+              <button class="rec-btn rec-btn-dl" onclick="ytSingleDownload('${f.username}','${f.filename}')">↓ Download</button>
+              <button class="rec-btn rec-btn-del" onclick="ytSingleDelete('${f.username}','${f.filename}')">✕ Delete</button>
+            </div>
+          </div>`;
+        }
       }
       html += `</div></div>`;
     }
