@@ -260,6 +260,18 @@
         </div>
       </div>
 
+  <!-- DOWNLOADS BATCH BAR -->
+  <div class="batch-bar" id="dl-batch-bar">
+    <span class="batch-count"><span id="dl-batch-count-num">0</span> selected</span>
+    <button class="btn" style="background:rgba(255,45,85,0.15);color:var(--accent);border:1px solid rgba(255,45,85,0.3);"
+      onclick="dlBatchDelete()">✕ Delete</button>
+    <button class="action-btn" onclick="Object.keys(_dlSelectedFiles).forEach(k=>delete _dlSelectedFiles[k]);
+      document.querySelectorAll('.dl-checkbox').forEach(b=>b.checked=false);
+      document.querySelectorAll('[data-dlkey]').forEach(c=>c.classList.remove('selected'));
+      document.querySelectorAll('.dl-section-cb').forEach(c=>{c.checked=false;c.indeterminate=false;});
+      dlUpdateBatchBar();" style="margin-left:4px;">✕ Clear</button>
+  </div>
+
       <!-- ── LOGS PANEL ── -->
       <div class="panel" id="panel-logs">
 
@@ -491,6 +503,12 @@
       <div style="font-family:var(--mono);font-size:10px;color:var(--text2);min-height:16px;margin-bottom:8px;"
         id="import-summary"></div>
       <div class="modal-actions">
+        <div style="display:flex;align-items:center;gap:8px;margin-right:auto;">
+          <input type="checkbox" id="import-force-all" style="width:13px;height:13px;accent-color:var(--blue);"
+            onchange="toggleForceAll(this)">
+          <label for="import-force-all" style="font-family:var(--mono);font-size:11px;color:var(--text2);
+            text-transform:none;letter-spacing:0;cursor:pointer;margin:0;">Force import all</label>
+        </div>
         <button class="btn btn-ghost" id="import-back-btn" onclick="backToImportStep1()">← Back</button>
         <button class="btn btn-ghost" onclick="closeImportModal()">Cancel</button>
         <button class="btn btn-primary" id="import-start-btn"

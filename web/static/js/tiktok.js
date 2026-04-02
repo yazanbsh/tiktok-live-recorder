@@ -727,6 +727,62 @@ async function dlResume(itemId) {
   } catch(e) { toast(`Error: ${e.message}`, 'error'); }
 }
 
+// ── Downloads selection ──────────────────────────────────────────────────────
+const _dlSelectedFiles = {};
+
+function dlToggleFile(key, checked) {
+  if (checked) _dlSelectedFiles[key] = true;
+  else delete _dlSelectedFiles[key];
+  document.querySelectorAll(`.rec-card[data-dlkey="${key}"]`).forEach(c =>
+    c.classList.toggle('selected', checked));
+  dlUpdateBatchBar();
+}
+
+function dlToggleSectionSelect(sectionKey, checked) {
+  document.querySelectorAll(`.dl-checkbox[data-user="${sectionKey}"]`).forEach(box => {
+    box.checked = checked;
+    dlToggleFile(box.dataset.dlkey, checked);
+  });
+  dlUpdateSectionCheckbox(sectionKey);
+}
+
+function dlUpdateSectionCheckbox(sectionKey) {
+  const boxes = document.querySelectorAll(`.dl-checkbox[data-user="${sectionKey}"]`);
+  const checked = [...boxes].filter(b => b.checked).length;
+  const cb = document.querySelector(`.dl-section-cb[data-user="${sectionKey}"]`);
+  if (!cb) return;
+  cb.checked = checked === boxes.length && boxes.length > 0;
+  cb.indeterminate = checked > 0 && checked < boxes.length;
+}
+
+function dlUpdateBatchBar() {
+  const count = Object.keys(_dlSelectedFiles).length;
+  const bar = document.getElementById('dl-batch-bar');
+  if (!bar) return;
+  bar.classList.toggle('visible', count > 0);
+  const countEl = document.getElementById('dl-batch-count-num');
+  if (countEl) countEl.textContent = count;
+}
+
+async function dlBatchDelete() {
+  const keys = Object.keys(_dlSelectedFiles);
+  if (!keys.length) return;
+  if (!confirm(`Delete ${keys.length} file${keys.length !== 1 ? 's' : ''}?`)) return;
+  // keys are "dl:username/filename" — strip prefix
+  const files = keys.map(k => k.replace(/^dl:/, ''));
+  try {
+    const res = await apiFetch('/api/tiktok/downloads', {
+      method: 'DELETE',
+      body: JSON.stringify({ files }),
+    });
+    const d = res.deleted?.length || 0;
+    toast(`Deleted ${d} file${d !== 1 ? 's' : ''}`, d > 0 ? 'success' : 'error');
+    Object.keys(_dlSelectedFiles).forEach(k => delete _dlSelectedFiles[k]);
+    dlUpdateBatchBar();
+    loadDownloadsList();
+  } catch(e) { toast(`Error: ${e.message}`, 'error'); }
+}
+
 async function loadDownloadsList() {
   const grid = document.getElementById('dl-grid');
   if (!grid) return;
@@ -752,6 +808,9 @@ async function loadDownloadsList() {
       html += `<div class="rec-section${isDlCollapsed ? ' collapsed' : ''}" data-user="${dlKey}">
         <div class="rec-section-header" onclick="toggleSection('${dlKey}')">
           <span class="rec-section-arrow">▼</span>
+          <input type="checkbox" class="rec-section-cb dl-section-cb" data-user="${dlKey}"
+            onclick="event.stopPropagation()"
+            onchange="dlToggleSectionSelect('${dlKey}', this.checked)">
           <span class="rec-section-title">
             <a href="https://tiktok.com/@${username}" target="_blank" onclick="event.stopPropagation()">@${username}</a>
           </span>
@@ -767,9 +826,11 @@ async function loadDownloadsList() {
         <div class="rec-section-body">`;
       const dlIsThumb = _sectionViewMode[dlKey] === 'thumb';
       for (const f of sortedItems) {
+        const dlFileKey = `dl:${f.username}/${f.filename}`;
+        const dlSelected = !!_dlSelectedFiles[dlFileKey];
         const thumbUrl = `/api/tiktok/downloads/${f.username}/${encodeURIComponent(f.filename)}/thumbnail`;
         if (dlIsThumb) {
-          html += `<div class="rec-card thumb-card">
+          html += `<div class="rec-card thumb-card${dlSelected ? ' selected' : ''}" data-dlkey="${dlFileKey}">
             <div class="thumb-img-wrap" onclick="openVideoModal('${f.username}','${f.filename}','dl')">
               <img class="thumb-img" src="${thumbUrl}"
                 onerror="this.parentElement.innerHTML='<div class=thumb-placeholder>▶</div>'"
@@ -790,10 +851,15 @@ async function loadDownloadsList() {
             </div>
           </div>`;
         } else {
-          html += `<div class="rec-card">
+          html += `<div class="rec-card${dlSelected ? ' selected' : ''}" data-dlkey="${dlFileKey}"
+              onclick="dlToggleFile('${dlFileKey}', !_dlSelectedFiles['${dlFileKey}']); document.querySelector('.dl-checkbox[data-dlkey=\'${dlFileKey}\']').checked=!!_dlSelectedFiles['${dlFileKey}']; dlUpdateSectionCheckbox('${dlKey}')">
             <div class="rec-card-top">
+              <input type="checkbox" class="dl-checkbox" data-dlkey="${dlFileKey}" data-user="${dlKey}"
+                ${dlSelected ? 'checked' : ''}
+                onclick="event.stopPropagation()"
+                onchange="dlToggleFile('${dlFileKey}', this.checked); dlUpdateSectionCheckbox('${dlKey}')">
               <a class="rec-filename" href="/api/tiktok/downloads/${f.username}/${encodeURIComponent(f.filename)}?inline=true"
-                target="_blank">${f.filename}</a>
+                target="_blank" onclick="event.stopPropagation()">${f.filename}</a>
             </div>
             <div class="rec-meta">
               <span>${f.size_mb} MB</span>
@@ -939,6 +1005,11 @@ async function reviewImport() {
         <span style="color:var(--muted);font-size:9px;flex-shrink:0;">→ ${f.new_filename}</span>
         <span id="import-row-status-${i}" style="color:${color};flex-shrink:0;white-space:nowrap;">
           ${isExists ? 'exists' : 'ready'}</span>
+        ${isExists ? `<label style="display:flex;gap:3px;align-items:center;flex-shrink:0;cursor:pointer;margin:0;">
+          <input type="checkbox" class="import-force-cb" data-idx="${i}"
+            style="width:12px;height:12px;accent-color:var(--blue);">
+          <span style="font-size:9px;color:var(--muted);">force</span>
+        </label>` : ''}
         <button class="rec-btn rec-btn-del" style="padding:1px 6px;font-size:9px;flex-shrink:0;"
           id="import-row-rm-${i}" onclick="removeImportRow(${i})">✕</button>
       </div>`;
@@ -948,6 +1019,10 @@ async function reviewImport() {
     document.getElementById('import-step2').style.display = '';
     document.getElementById('import-summary').textContent = '';
   } catch(e) { toast(`Error: ${e.message}`, 'error'); }
+}
+
+function toggleForceAll(cb) {
+  document.querySelectorAll('.import-force-cb').forEach(el => el.checked = cb.checked);
 }
 
 function removeImportRow(idx) {
@@ -998,7 +1073,8 @@ async function startImport() {
       formData.append('video_id',          f.video_id);
       formData.append('new_filename',      f.new_filename);
       formData.append('original_filename', f.original_filename);
-      formData.append('force',             'false');
+      const forceCb = document.querySelector(`.import-force-cb[data-idx="${i}"]`);
+      formData.append('force', forceCb && forceCb.checked ? 'true' : 'false');
       formData.append('file',              fileObj, fileObj.name);
 
       const res = await fetch('/api/tiktok/imports/file', {
@@ -1036,6 +1112,8 @@ async function startImport() {
   btn.disabled = false;
   if (backBtn) backBtn.disabled = false;
   btn.textContent = '✓ Done';
+  btn.removeAttribute('onclick');
+  btn.onclick = closeImportModal;
 
   if (imported > 0) {
     toast(`Imported ${imported} file${imported !== 1 ? 's' : ''}`, 'success');
