@@ -24,8 +24,8 @@ QUEUE_FILE = DATA_DIR / "queue.json"
 LOG_FILE = DATA_DIR / "logs" / "tiktok-recorder.log"
 
 # ── binary paths ──────────────────────────────────────────────────────────────
-YTDLP_BIN = os.environ.get("YTDLP_BIN", "/app/yt-dlp")
-DENO_BIN = os.environ.get("DENO_BIN", "/app/deno")
+YTDLP_BIN = os.environ.get("YTDLP_BIN", "/usr/bin/yt-dlp")
+DENO_BIN = os.environ.get("DENO_BIN", "/usr/bin/deno")
 COOKIES_FILE = Path("/app/src/cookies.txt")
 
 # tikwm endpoints
