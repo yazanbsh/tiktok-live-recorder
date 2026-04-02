@@ -4,6 +4,11 @@ Place this file at:  <repo-root>/web/server.py
 Run with:  uv run uvicorn web.server:app --host 0.0.0.0 --port 8000 --reload
 """
 
+import logging
+import logging.handlers
+from pathlib import Path
+import os
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -18,6 +23,22 @@ from web.routers.tiktok.downloader import router as tiktok_downloader_router
 from web.routers.youtube.watchlist import (
     router as yt_watchlist_router,
     startup_yt_watchlist,
+)
+
+# ── Logging setup ────────────────────────────────────────────────────────────
+_DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
+_LOG_FILE = _DATA_DIR / "logs" / "app.log"
+_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.handlers.RotatingFileHandler(
+            _LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+        ),
+        logging.StreamHandler(),  # also keep stdout for docker logs
+    ],
 )
 
 app = FastAPI(title="TikTok Live Recorder", version="2.0.0")

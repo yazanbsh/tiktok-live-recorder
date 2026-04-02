@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from .config import RECORDINGS_DIR, LOG_FILE
+from .config import RECORDINGS_DIR, LOG_FILE, DATA_DIR
 
 router = APIRouter()
 
@@ -91,13 +91,17 @@ def batch_delete_recordings(req: BatchDeleteRecordingsRequest):
 
 # ── Logs ──────────────────────────────────────────────────────────────────────
 
+APP_LOG_FILE = DATA_DIR / "logs" / "app.log"
+
 
 @router.get("/api/logs")
-def get_logs(lines: int = 100):
-    if not LOG_FILE.exists():
+def get_logs(lines: int = 200):
+    """Serve app.log (Python logging). Falls back to tiktok-recorder.log."""
+    log_file = APP_LOG_FILE if APP_LOG_FILE.exists() else LOG_FILE
+    if not log_file.exists():
         return {"lines": []}
     try:
-        all_lines = LOG_FILE.read_text(encoding="utf-8", errors="replace").splitlines()
+        all_lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
         return {"lines": all_lines[-lines:]}
     except Exception as e:
         return {"lines": [], "error": str(e)}

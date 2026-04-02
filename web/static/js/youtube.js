@@ -43,7 +43,7 @@ function renderYTUserRow(u) {
     </td>
     <td>${statusBadge}</td>
     <td><span class="mode-tag">${u.interval}m</span></td>
-    <td id="yt-live-${u.username}">${renderYTLiveBadge(u.username)}</td>
+    <td id="yt-live-${u.username}">${renderYTLiveBadgeFromData(u)}</td>
     <td style="font-size:12px;color:var(--text2)">${lastLive}</td>
     <td style="font-family:var(--mono);font-size:13px">${u.recordings_count || 0}</td>
     <td>
@@ -61,22 +61,38 @@ function renderYTUserRow(u) {
   </tr>`;
 }
 
-function renderYTLiveBadge(username) {
-  return `<span class="checking" id="yt-live-badge-${username}" 
-    onclick="recheckYTLive('${username}')" style="cursor:pointer;" title="Click to recheck">
-    ··· checking
-  </span>`;
+function renderYTLiveBadgeFromData(u) {
+  // render from watchlist data — no extra API call
+  if (u.last_seen_live) {
+    const age = (Date.now() - new Date(u.last_seen_live).getTime()) / 1000;
+    // if seen live within 2x the interval, show as live
+    if (age < (u.interval || 5) * 60 * 2) {
+      return `<span class="live-indicator" id="yt-live-badge-${u.username}"
+        onclick="recheckYTLive('${u.username}')" style="cursor:pointer;" title="Click to force recheck">
+        <span class="live-dot"></span>LIVE</span>`;
+    }
+  }
+  return `<span style="color:var(--muted);font-family:var(--mono);font-size:10px;"
+    id="yt-live-badge-${u.username}"
+    onclick="recheckYTLive('${u.username}')" style="cursor:pointer;" title="Click to force recheck">
+    OFFLINE</span>`;
 }
 
 async function recheckYTLive(username) {
+  // manual click — force fresh check (backend clears cache)
   const el = document.getElementById(`yt-live-badge-${username}`);
   if (el) el.innerHTML = `<span class="checking">··· checking</span>`;
   try {
     const data = await apiFetch(`/api/yt/users/${username}/status`);
     if (el) {
-      el.innerHTML = data.is_live
-        ? `<span class="live-indicator"><span class="live-dot"></span>LIVE</span>`
-        : `<span style="color:var(--muted);font-family:var(--mono);font-size:10px;">OFFLINE</span>`;
+      el.outerHTML = data.is_live
+        ? `<span class="live-indicator" id="yt-live-badge-${username}"
+            onclick="recheckYTLive('${username}')" style="cursor:pointer;" title="Click to force recheck">
+            <span class="live-dot"></span>LIVE</span>`
+        : `<span style="color:var(--muted);font-family:var(--mono);font-size:10px;"
+            id="yt-live-badge-${username}"
+            onclick="recheckYTLive('${username}')" style="cursor:pointer;" title="Click to force recheck">
+            OFFLINE</span>`;
     }
   } catch(e) {
     if (el) el.innerHTML = `<span style="color:var(--accent);font-family:var(--mono);font-size:10px;">ERR</span>`;
@@ -84,12 +100,8 @@ async function recheckYTLive(username) {
 }
 
 async function pollYTLiveStatus() {
-  try {
-    const users = await apiFetch('/api/yt/users');
-    for (const u of users) {
-      recheckYTLive(u.username);
-    }
-  } catch(e) {}
+  // no-op — live status is now derived from watchlist data on each refresh
+  // manual recheck available by clicking the badge
 }
 
 async function removeYTUser(username) {

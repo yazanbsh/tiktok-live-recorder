@@ -27,6 +27,10 @@ _state_lock = threading.Lock()
 _workers: dict[str, threading.Thread] = {}
 _stop_events: dict[str, threading.Event] = {}
 
+# Live status cache: { username: {"is_live": bool, "checked_at": datetime} }
+_live_cache: dict[str, dict] = {}
+_live_cache_lock = threading.Lock()
+
 
 def _load_yt_watchlist() -> dict:
     if YT_WATCHLIST_FILE.exists():
@@ -123,6 +127,33 @@ def _is_yt_live(channel_url: str) -> bool:
         return False
 
 
+def _is_yt_live_cached(username: str, channel_url: str, interval_minutes: int) -> bool:
+    """
+    Return cached live status if checked recently (within interval),
+    otherwise run yt-dlp check and update cache.
+    """
+    import logging
+
+    log = logging.getLogger(__name__)
+    with _live_cache_lock:
+        cached = _live_cache.get(username)
+        if cached:
+            age = (datetime.utcnow() - cached["checked_at"]).total_seconds()
+            if age < interval_minutes * 60:
+                log.debug(
+                    f"[{username}] returning cached live={cached['is_live']} (age={age:.0f}s)"
+                )
+                return cached["is_live"]
+
+    # cache miss or stale — run actual check
+    log.info(f"[{username}] checking live status via yt-dlp")
+    result = _is_yt_live(channel_url)
+    with _live_cache_lock:
+        _live_cache[username] = {"is_live": result, "checked_at": datetime.utcnow()}
+    log.info(f"[{username}] live={result}")
+    return result
+
+
 # ── Recording ─────────────────────────────────────────────────────────────────
 
 
@@ -201,7 +232,7 @@ def _yt_recording_worker(username: str, stop_event: threading.Event):
                 file_prefix = entry.get("file_prefix")
                 should_record = entry.get("record", True)
 
-            is_live = _is_yt_live(channel_url)
+            is_live = _is_yt_live_cached(username, channel_url, interval)
 
             if is_live:
                 with _state_lock:
@@ -434,7 +465,12 @@ def check_yt_live_status(username: str):
         if username not in yt_watchlist:
             raise HTTPException(404, f"@{username} not found in YT watchlist")
         entry = yt_watchlist[username]
-    is_live = _is_yt_live(entry["channel_url"])
+    # use cache — force fresh check by clearing cache entry first if called manually
+    with _live_cache_lock:
+        _live_cache.pop(username, None)
+    is_live = _is_yt_live_cached(
+        username, entry["channel_url"], entry.get("interval", 5)
+    )
     if is_live:
         with _state_lock:
             yt_watchlist[username]["last_seen_live"] = datetime.utcnow().isoformat()
