@@ -261,9 +261,11 @@
 
       <!-- ── LOGS PANEL ── -->
       <div class="panel" id="panel-logs">
-        <div class="log-container">
+
+        <!-- App Log -->
+        <div class="log-container" style="margin-bottom:20px;">
           <div class="log-toolbar">
-            <span class="section-title">System Log</span>
+            <span class="section-title">App Log</span>
             <div style="display:flex;gap:10px;align-items:center;">
               <label style="display:flex;gap:6px;align-items:center;margin:0;font-size:11px;">
                 <input type="checkbox" id="log-autoscroll" checked style="width:auto;">
@@ -276,6 +278,24 @@
             <span class="log-line info">Loading logs...</span>
           </div>
         </div>
+
+        <!-- TikTok Recorder Log -->
+        <div class="log-container">
+          <div class="log-toolbar">
+            <span class="section-title">TikTok Recorder Log</span>
+            <div style="display:flex;gap:10px;align-items:center;">
+              <label style="display:flex;gap:6px;align-items:center;margin:0;font-size:11px;">
+                <input type="checkbox" id="tk-log-autoscroll" checked style="width:auto;">
+                Auto-scroll
+              </label>
+              <button class="action-btn" onclick="loadTikTokLogs()">↻ Refresh</button>
+            </div>
+          </div>
+          <div class="log-lines" id="tk-log-lines">
+            <span class="log-line info">Loading logs...</span>
+          </div>
+        </div>
+
       </div>
 
     </div>

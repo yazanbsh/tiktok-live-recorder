@@ -21,7 +21,7 @@ function showPanel(name) {
   if (name === 'recordings')      loadRecordings();
   if (name === 'yt-recordings')   loadYTRecordings();
   if (name === 'downloads')       loadDownloadsList();
-  if (name === 'logs')            loadLogs();
+  if (name === 'logs')            { loadLogs(); loadTikTokLogs(); }
 }
 
 function refreshAll() {
@@ -56,20 +56,37 @@ async function loadStats() {
 }
 
 // ── Logs ──────────────────────────────────────────────────────────────────────
+function _renderLogLines(lines) {
+  return lines.map(line => {
+    const cls = line.includes('ERROR') || line.includes('[!]') ? 'error'
+              : line.includes('WARNING') || line.includes('WARN') ? 'warn' : 'info';
+    return `<span class="log-line ${cls}">${escHtml(line)}</span>`;
+  }).join('\n');
+}
+
 async function loadLogs() {
   const container = document.getElementById('log-lines');
   try {
     const data = await apiFetch('/api/logs?lines=200');
-    container.innerHTML = data.lines.map(line => {
-      const cls = line.includes('[!]') || line.includes('ERROR') ? 'error'
-                : line.includes('WARNING') ? 'warn' : 'info';
-      return `<span class="log-line ${cls}">${escHtml(line)}</span>`;
-    }).join('\n');
+    container.innerHTML = _renderLogLines(data.lines);
     if (document.getElementById('log-autoscroll').checked) {
       container.scrollTop = container.scrollHeight;
     }
   } catch(e) {
     container.innerHTML = `<span class="log-line error">Failed to load logs: ${e.message}</span>`;
+  }
+}
+
+async function loadTikTokLogs() {
+  const container = document.getElementById('tk-log-lines');
+  try {
+    const data = await apiFetch('/api/logs/tiktok?lines=200');
+    container.innerHTML = _renderLogLines(data.lines);
+    if (document.getElementById('tk-log-autoscroll').checked) {
+      container.scrollTop = container.scrollHeight;
+    }
+  } catch(e) {
+    container.innerHTML = `<span class="log-line error">Failed to load TikTok logs: ${e.message}</span>`;
   }
 }
 
