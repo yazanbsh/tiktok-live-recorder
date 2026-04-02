@@ -480,6 +480,111 @@ def resume_queue_item(item_id: str):
     return {"ok": True}
 
 
+# ── Import endpoints ─────────────────────────────────────────────────────────
+
+
+class ImportReviewRequest(BaseModel):
+    username: str
+    filenames: list[str]  # original filenames from client
+
+
+@router.post("/api/tiktok/imports/review")
+def review_import(req: ImportReviewRequest):
+    """
+    Check which files already exist in the user's log.
+    Returns list of {filename, video_id, new_filename, status}
+    """
+    username = req.username.strip().lstrip("@")
+    if not username:
+        raise HTTPException(400, "Username required")
+
+    log = _load_dl_log(username)
+    results = []
+
+    for original in req.filenames:
+        # extract video ID: "7330367233635421445_HD.mp4" → "7330367233635421445"
+        stem = Path(original).stem  # e.g. "7330367233635421445_HD"
+        video_id = stem.replace("_HD", "").replace("_hd", "").strip("_")
+        # fallback: if no underscore pattern just use stem
+        if not video_id.isdigit():
+            # try splitting on underscore and taking first numeric part
+            parts = stem.split("_")
+            video_id = next((p for p in parts if p.isdigit()), stem)
+
+        new_filename = f"{username}_{video_id}.mp4"
+        already_in_log = video_id in log
+        dest = DOWNLOADS_DIR / username / new_filename
+        already_on_disk = dest.exists()
+
+        results.append(
+            {
+                "original_filename": original,
+                "video_id": video_id,
+                "new_filename": new_filename,
+                "status": "exists" if (already_in_log or already_on_disk) else "ready",
+            }
+        )
+
+    return {"username": username, "files": results}
+
+
+class ImportFile(BaseModel):
+    original_filename: str
+    video_id: str
+    new_filename: str
+    force: bool = False
+    content_b64: str  # base64 encoded file content
+
+
+class ImportRequest(BaseModel):
+    username: str
+    files: list[ImportFile]
+
+
+@router.post("/api/tiktok/imports/commit")
+async def commit_import(req: ImportRequest):
+    """
+    Actually write the files to disk and update the log.
+    Skips files already existing unless force=True.
+    """
+    import base64
+
+    username = req.username.strip().lstrip("@")
+    if not username:
+        raise HTTPException(400, "Username required")
+
+    user_dir = DOWNLOADS_DIR / username
+    user_dir.mkdir(parents=True, exist_ok=True)
+
+    imported, skipped, failed = [], [], []
+    log = _load_dl_log(username)
+
+    for f in req.files:
+        dest = user_dir / f.new_filename
+        already_in_log = f.video_id in log
+        already_on_disk = dest.exists()
+
+        if (already_in_log or already_on_disk) and not f.force:
+            skipped.append(f.new_filename)
+            continue
+
+        try:
+            data = base64.b64decode(f.content_b64)
+            dest.write_bytes(data)
+            log[f.video_id] = {
+                "video_id": f.video_id,
+                "original_url": f"imported:{f.original_filename}",
+                "filename": f.new_filename,
+                "downloaded_at": datetime.utcnow().isoformat(),
+            }
+            imported.append(f.new_filename)
+        except Exception as e:
+            failed.append({"file": f.new_filename, "error": str(e)})
+
+    _save_dl_log(username, log)
+    return {"imported": imported, "skipped": skipped, "failed": failed}
+
+
 @router.get("/api/tiktok/downloads")
 def list_downloads():
     files = []

@@ -839,3 +839,183 @@ async function dlSingleDelete(username, filename) {
     }
   } catch(e) { toast(`Error: ${e.message}`, 'error'); }
 }
+
+// ── Import ───────────────────────────────────────────────────────────────────
+
+let _importFiles = [];
+let _importReviewData = null;
+
+async function openImportModal() {
+  try {
+    const files = await apiFetch('/api/tiktok/downloads');
+    const users = [...new Set(files.map(f => f.username))].sort();
+    const sel = document.getElementById('import-user-select');
+    sel.innerHTML = '<option value="">— select user —</option>' +
+      users.map(u => `<option value="${u}">${u}</option>`).join('');
+  } catch(e) {}
+  _importFiles = [];
+  _importReviewData = null;
+  document.getElementById('import-file-count').textContent = '';
+  document.getElementById('import-user-select').value = '';
+  document.getElementById('import-user-new').value = '';
+  document.getElementById('import-step1').style.display = '';
+  document.getElementById('import-step2').style.display = 'none';
+  document.getElementById('import-modal').classList.add('open');
+}
+
+function closeImportModal() {
+  document.getElementById('import-modal').classList.remove('open');
+}
+
+function backToImportStep1() {
+  document.getElementById('import-step1').style.display = '';
+  document.getElementById('import-step2').style.display = 'none';
+}
+
+function onImportUserSelect() {
+  const val = document.getElementById('import-user-select').value;
+  if (val) document.getElementById('import-user-new').value = '';
+}
+
+function onImportUserNew() {
+  const val = document.getElementById('import-user-new').value.trim();
+  if (val) document.getElementById('import-user-select').value = '';
+}
+
+function _getImportUsername() {
+  const sel = document.getElementById('import-user-select').value;
+  const inp = document.getElementById('import-user-new').value.trim().replace(/^@/, '');
+  return sel || inp;
+}
+
+function handleImportDrop(event) {
+  event.preventDefault();
+  document.getElementById('import-dropzone').style.borderColor = 'var(--border2)';
+  const files = [...event.dataTransfer.files].filter(f => f.name.endsWith('.mp4'));
+  _importFiles = [..._importFiles, ...files];
+  _updateImportFileCount();
+}
+
+function handleImportFileSelect(input) {
+  const files = [...input.files].filter(f => f.name.endsWith('.mp4'));
+  _importFiles = [..._importFiles, ...files];
+  _updateImportFileCount();
+  input.value = '';
+}
+
+function _updateImportFileCount() {
+  const el = document.getElementById('import-file-count');
+  el.textContent = _importFiles.length > 0
+    ? `${_importFiles.length} file${_importFiles.length !== 1 ? 's' : ''} selected`
+    : '';
+}
+
+async function reviewImport() {
+  const username = _getImportUsername();
+  if (!username) { toast('Select or enter a username', 'error'); return; }
+  if (_importFiles.length === 0) { toast('Add at least one file', 'error'); return; }
+
+  try {
+    const res = await apiFetch('/api/tiktok/imports/review', {
+      method: 'POST',
+      body: JSON.stringify({
+        username,
+        filenames: _importFiles.map(f => f.name),
+      }),
+    });
+
+    _importReviewData = res;
+    document.getElementById('import-review-user').textContent = '@' + username;
+    document.getElementById('import-force-all').checked = false;
+
+    const list = document.getElementById('import-review-list');
+    list.innerHTML = res.files.map((f, i) => {
+      const isExists = f.status === 'exists';
+      const color = isExists ? 'var(--yellow)' : 'var(--green)';
+      const label = isExists ? 'already exists' : 'ready';
+      return `<div id="import-row-${i}" style="font-family:var(--mono);font-size:10px;display:flex;
+          gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);">
+        <span style="color:${color};flex-shrink:0;">${isExists ? '↷' : '✓'}</span>
+        <span style="flex:1;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+          title="${f.original_filename}">${f.original_filename}</span>
+        <span style="color:var(--muted);font-size:9px;flex-shrink:0;">→ ${f.new_filename}</span>
+        <span style="color:${color};flex-shrink:0;white-space:nowrap;">${label}</span>
+        ${isExists ? `<label style="display:flex;gap:4px;align-items:center;flex-shrink:0;cursor:pointer;margin:0;">
+          <input type="checkbox" class="import-force-cb" data-idx="${i}"
+            style="width:12px;height:12px;accent-color:var(--blue);">
+          <span style="font-size:9px;color:var(--muted);">force</span>
+        </label>` : ''}
+        <button class="rec-btn rec-btn-del" style="padding:1px 6px;font-size:9px;flex-shrink:0;"
+          onclick="removeImportRow(${i})">✕</button>
+      </div>`;
+    }).join('');
+
+    document.getElementById('import-step1').style.display = 'none';
+    document.getElementById('import-step2').style.display = '';
+  } catch(e) { toast(`Error: ${e.message}`, 'error'); }
+}
+
+function removeImportRow(idx) {
+  _importFiles.splice(idx, 1);
+  if (_importReviewData) _importReviewData.files.splice(idx, 1);
+  const list = document.getElementById('import-review-list');
+  if (list) {
+    const rows = list.querySelectorAll('[id^="import-row-"]');
+    if (rows[idx]) rows[idx].remove();
+  }
+}
+
+function toggleForceAll(cb) {
+  document.querySelectorAll('.import-force-cb').forEach(el => el.checked = cb.checked);
+}
+
+async function startImport() {
+  const username = _getImportUsername();
+  if (!username || !_importReviewData) return;
+
+  const btn = document.getElementById('import-start-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Importing...';
+
+  try {
+    const fileMap = {};
+    for (const f of _importFiles) {
+      fileMap[f.name] = await new Promise((res, rej) => {
+        const reader = new FileReader();
+        reader.onload = e => res(e.target.result.split(',')[1]);
+        reader.onerror = rej;
+        reader.readAsDataURL(f);
+      });
+    }
+
+    const files = _importReviewData.files.map((f, i) => {
+      const forceCb = document.querySelector(`.import-force-cb[data-idx="${i}"]`);
+      return {
+        original_filename: f.original_filename,
+        video_id:          f.video_id,
+        new_filename:      f.new_filename,
+        force:             forceCb ? forceCb.checked : false,
+        content_b64:       fileMap[f.original_filename] || '',
+      };
+    }).filter(f => f.content_b64);
+
+    const res = await apiFetch('/api/tiktok/imports/commit', {
+      method: 'POST',
+      body: JSON.stringify({ username, files }),
+    });
+
+    const i = res.imported.length, s = res.skipped.length, e = res.failed.length;
+    toast(
+      `Imported ${i} file${i !== 1 ? 's' : ''}${s ? `, ${s} skipped` : ''}${e ? `, ${e} failed` : ''}`,
+      i > 0 ? 'success' : 'info'
+    );
+
+    if (i > 0) loadDownloadsList();
+    closeImportModal();
+  } catch(e) {
+    toast(`Error: ${e.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⤵ Start Import';
+  }
+}

@@ -220,6 +220,7 @@
           <div style="display:flex;gap:10px;align-items:center;">
             <button class="btn btn-primary" id="dl-submit-btn" onclick="submitDownloads()">↓ Download</button>
             <button class="btn btn-ghost" onclick="document.getElementById('dl-urls-input').value=''">Clear</button>
+            <button class="btn btn-ghost" onclick="openImportModal()" style="border-color:var(--blue);color:var(--blue);">⤵ Import</button>
             <button class="btn" id="dl-resume-queue-btn" onclick="dlResumeQueue()"
               style="display:none;background:rgba(0,229,160,0.15);color:var(--green);border:1px solid rgba(0,229,160,0.3);">
               ▶ Resume queue
@@ -427,6 +428,80 @@
       <button class="btn btn-ghost" onclick="closeEditYTModal()">Cancel</button>
       <button class="btn btn-primary" style="background:#ff4444;" onclick="submitEditYTUser()">Save</button>
     </div>
+  </div>
+</div>
+
+<!-- IMPORT MODAL -->
+<div class="modal-backdrop" id="import-modal" style="z-index:600;">
+  <div class="modal" style="max-width:680px;width:95vw;">
+    <div class="modal-title" style="color:var(--blue);">⤵ Import Videos</div>
+
+    <!-- Step 1: file drop + user select -->
+    <div id="import-step1">
+      <!-- Drop zone -->
+      <div id="import-dropzone"
+        style="border:2px dashed var(--border2);border-radius:var(--radius);padding:32px;text-align:center;
+               cursor:pointer;transition:border-color 0.15s;margin-bottom:16px;background:var(--surface);"
+        ondragover="event.preventDefault();this.style.borderColor='var(--blue)'"
+        ondragleave="this.style.borderColor='var(--border2)'"
+        ondrop="handleImportDrop(event)"
+        onclick="document.getElementById('import-file-input').click()">
+        <input type="file" id="import-file-input" multiple accept=".mp4" style="display:none"
+          onchange="handleImportFileSelect(this)">
+        <div style="font-size:28px;margin-bottom:8px;opacity:.5;">⤵</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--text2);">
+          Drop .mp4 files here or click to browse
+        </div>
+        <div id="import-file-count" style="font-family:var(--mono);font-size:10px;color:var(--blue);margin-top:8px;"></div>
+      </div>
+
+      <!-- User selector -->
+      <div class="form-row" style="margin-bottom:16px;">
+        <div class="form-group">
+          <label>Existing User</label>
+          <select id="import-user-select" onchange="onImportUserSelect()">
+            <option value="">— select user —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Or New Username</label>
+          <input type="text" id="import-user-new" placeholder="@username"
+            oninput="onImportUserNew()" />
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeImportModal()">Cancel</button>
+        <button class="btn btn-primary" style="background:var(--blue);border-color:var(--blue);"
+          onclick="reviewImport()">Review →</button>
+      </div>
+    </div>
+
+    <!-- Step 2: review list -->
+    <div id="import-step2" style="display:none;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <span style="font-family:var(--mono);font-size:11px;color:var(--text2);">
+          Importing as: <span id="import-review-user" style="color:var(--blue);"></span>
+        </span>
+        <button class="btn btn-ghost" style="font-size:10px;padding:4px 10px;" onclick="backToImportStep1()">← Back</button>
+      </div>
+
+      <div id="import-review-list" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;margin-bottom:12px;"></div>
+
+      <div class="modal-actions">
+        <div style="display:flex;align-items:center;gap:8px;margin-right:auto;">
+          <input type="checkbox" id="import-force-all" style="width:14px;height:14px;accent-color:var(--blue);"
+            onchange="toggleForceAll(this)">
+          <label for="import-force-all" style="font-family:var(--mono);font-size:11px;color:var(--text2);
+            text-transform:none;letter-spacing:0;cursor:pointer;margin:0;">Force import all</label>
+        </div>
+        <button class="btn btn-ghost" onclick="closeImportModal()">Cancel</button>
+        <button class="btn btn-primary" id="import-start-btn"
+          style="background:var(--blue);border-color:var(--blue);"
+          onclick="startImport()">⤵ Start Import</button>
+      </div>
+    </div>
+
   </div>
 </div>
 
