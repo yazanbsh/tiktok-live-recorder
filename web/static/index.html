@@ -488,13 +488,10 @@
 
       <div id="import-review-list" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;margin-bottom:12px;"></div>
 
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text2);min-height:16px;margin-bottom:8px;"
+        id="import-summary"></div>
       <div class="modal-actions">
-        <div style="display:flex;align-items:center;gap:8px;margin-right:auto;">
-          <input type="checkbox" id="import-force-all" style="width:14px;height:14px;accent-color:var(--blue);"
-            onchange="toggleForceAll(this)">
-          <label for="import-force-all" style="font-family:var(--mono);font-size:11px;color:var(--text2);
-            text-transform:none;letter-spacing:0;cursor:pointer;margin:0;">Force import all</label>
-        </div>
+        <button class="btn btn-ghost" id="import-back-btn" onclick="backToImportStep1()">← Back</button>
         <button class="btn btn-ghost" onclick="closeImportModal()">Cancel</button>
         <button class="btn btn-primary" id="import-start-btn"
           style="background:var(--blue);border-color:var(--blue);"

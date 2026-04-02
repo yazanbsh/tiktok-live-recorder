@@ -528,61 +528,54 @@ def review_import(req: ImportReviewRequest):
     return {"username": username, "files": results}
 
 
-class ImportFile(BaseModel):
-    original_filename: str
-    video_id: str
-    new_filename: str
-    force: bool = False
-    content_b64: str  # base64 encoded file content
+from fastapi import UploadFile, File, Form
 
 
-class ImportRequest(BaseModel):
-    username: str
-    files: list[ImportFile]
-
-
-@router.post("/api/tiktok/imports/commit")
-async def commit_import(req: ImportRequest):
+@router.post("/api/tiktok/imports/file")
+async def import_single_file(
+    username: str = Form(...),
+    video_id: str = Form(...),
+    new_filename: str = Form(...),
+    original_filename: str = Form(...),
+    force: bool = Form(False),
+    file: UploadFile = File(...),
+):
     """
-    Actually write the files to disk and update the log.
-    Skips files already existing unless force=True.
+    Import a single file. Called once per file from the frontend loop.
+    Returns status: imported | skipped | error
     """
-    import base64
-
-    username = req.username.strip().lstrip("@")
-    if not username:
-        raise HTTPException(400, "Username required")
-
+    username = username.strip().lstrip("@")
     user_dir = DOWNLOADS_DIR / username
     user_dir.mkdir(parents=True, exist_ok=True)
 
-    imported, skipped, failed = [], [], []
+    dest = user_dir / new_filename
     log = _load_dl_log(username)
 
-    for f in req.files:
-        dest = user_dir / f.new_filename
-        already_in_log = f.video_id in log
-        already_on_disk = dest.exists()
+    already_in_log = video_id in log
+    already_on_disk = dest.exists()
 
-        if (already_in_log or already_on_disk) and not f.force:
-            skipped.append(f.new_filename)
-            continue
+    if (already_in_log or already_on_disk) and not force:
+        return {
+            "status": "skipped",
+            "filename": new_filename,
+            "reason": "Already exists",
+        }
 
-        try:
-            data = base64.b64decode(f.content_b64)
-            dest.write_bytes(data)
-            log[f.video_id] = {
-                "video_id": f.video_id,
-                "original_url": f"imported:{f.original_filename}",
-                "filename": f.new_filename,
-                "downloaded_at": datetime.utcnow().isoformat(),
-            }
-            imported.append(f.new_filename)
-        except Exception as e:
-            failed.append({"file": f.new_filename, "error": str(e)})
-
-    _save_dl_log(username, log)
-    return {"imported": imported, "skipped": skipped, "failed": failed}
+    try:
+        contents = await file.read()
+        dest.write_bytes(contents)
+        log[video_id] = {
+            "video_id": video_id,
+            "original_url": f"imported:{original_filename}",
+            "filename": new_filename,
+            "downloaded_at": datetime.utcnow().isoformat(),
+        }
+        _save_dl_log(username, log)
+        return {"status": "imported", "filename": new_filename}
+    except Exception as e:
+        if dest.exists():
+            dest.unlink()
+        return {"status": "error", "filename": new_filename, "reason": str(e)}
 
 
 @router.get("/api/tiktok/downloads")
