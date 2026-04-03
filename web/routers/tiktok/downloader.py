@@ -18,6 +18,8 @@ from pydantic import BaseModel
 
 from ..shared.config import DOWNLOADS_DIR, QUEUE_FILE, TIKWM_SUBMIT, TIKWM_RESULT
 
+TIKWM_DEFAULT_API = "https://www.tikwm.com/api/"
+
 router = APIRouter()
 
 # ── Queue persistence ─────────────────────────────────────────────────────────
@@ -180,6 +182,105 @@ async def _download_file(url: str, dest: Path, client: httpx.AsyncClient):
                 f.write(chunk)
 
 
+# ── Photo post downloader ────────────────────────────────────────────────────
+
+
+async def _process_photo_post(
+    item_id: str,
+    url: str,
+    video_id: str,
+    username: str,
+    client: httpx.AsyncClient,
+    update_fn,
+) -> bool:
+    """
+    Download all images from a TikTok photo post via tikwm default API.
+    Returns True on success.
+    """
+    import logging
+
+    log = logging.getLogger(__name__)
+
+    try:
+        resp = await client.get(
+            TIKWM_DEFAULT_API,
+            params={"url": video_id, "hd": "1"},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        update_fn("error", f"tikwm photo API failed: {e}")
+        return False
+
+    if data.get("code") != 0:
+        update_fn("error", f"tikwm photo API error: {data.get('msg', 'unknown')}")
+        return False
+
+    images = data.get("data", {}).get("images") or []
+    if not images:
+        update_fn("error", "No images found in tikwm response")
+        return False
+
+    # use username from API response if available
+    api_username = data.get("data", {}).get("author", {}).get("unique_id") or username
+    user_dir = DOWNLOADS_DIR / api_username
+    user_dir.mkdir(parents=True, exist_ok=True)
+
+    total = len(images)
+    filenames = []
+
+    for idx, img_url in enumerate(images, start=1):
+        update_fn("processing", f"downloading {idx}/{total} images")
+        filename = f"{api_username}_{video_id}_{idx}.jpg"
+        dest = user_dir / filename
+        try:
+            await _download_file(img_url, dest, client)
+            filenames.append(filename)
+            log.info(f"[{video_id}] downloaded image {idx}/{total}")
+        except Exception as e:
+            update_fn("error", f"Image {idx}/{total} failed: {e}")
+            _append_dl_error(api_username, f"[{video_id}] image {idx} error: {e}")
+            # clean up downloaded so far
+            for f in filenames:
+                p = user_dir / f
+                if p.exists():
+                    p.unlink()
+            return False
+
+    # write log entry
+    dl_log = _load_dl_log(api_username)
+    dl_log[video_id] = {
+        "video_id": video_id,
+        "original_url": url,
+        "filenames": filenames,
+        "count": total,
+        "type": "photo",
+        "downloaded_at": datetime.utcnow().isoformat(),
+    }
+    _save_dl_log(api_username, dl_log)
+
+    _queue_update_item(
+        item_id,
+        status="downloaded",
+        reason=f"{total} images",
+        video_id=video_id,
+        username=api_username,
+        filename=filenames[0] if filenames else "",
+    )
+    _broadcast(
+        {
+            "id": item_id,
+            "status": "downloaded",
+            "reason": f"{total} images",
+            "video_id": video_id,
+            "username": api_username,
+            "filename": filenames[0] if filenames else "",
+        }
+    )
+    return True
+
+
 # ── Core processor ────────────────────────────────────────────────────────────
 
 
@@ -226,6 +327,16 @@ async def _process_queue_item(item: dict):
                 update("skipped", "Duplicate — already downloaded in this session")
                 return
 
+            # ── route: photo post vs video post ───────────────────────────
+            is_photo = "/photo/" in resolved_url
+
+            if is_photo:
+                await _process_photo_post(
+                    item_id, url, video_id, username, client, update
+                )
+                return
+
+            # ── video post: tikwm task flow ───────────────────────────────
             try:
                 task_id = await _submit_tikwm_task(resolved_url, client)
             except RuntimeError as e:
@@ -581,16 +692,20 @@ async def import_single_file(
 @router.get("/api/tiktok/downloads")
 def list_downloads():
     files = []
-    for f in DOWNLOADS_DIR.rglob("*.mp4"):
-        stat = f.stat()
-        files.append(
-            {
-                "filename": f.name,
-                "username": f.parent.name,
-                "size_mb": round(stat.st_size / 1024 / 1024, 2),
-                "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-            }
-        )
+    for pattern in ("*.mp4", "*.jpg", "*.jpeg", "*.png"):
+        for f in DOWNLOADS_DIR.rglob(pattern):
+            # skip log files
+            if f.name.endswith("_log.json") or f.name.endswith("_errors.log"):
+                continue
+            stat = f.stat()
+            files.append(
+                {
+                    "filename": f.name,
+                    "username": f.parent.name,
+                    "size_mb": round(stat.st_size / 1024 / 1024, 2),
+                    "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+                }
+            )
     files.sort(key=lambda x: x["created_at"], reverse=True)
     return files
 
@@ -604,6 +719,13 @@ def serve_download(username: str, filename: str, inline: bool = False):
         file_path.relative_to(DOWNLOADS_DIR)
     except ValueError:
         raise HTTPException(403, "Access denied")
+    ext = file_path.suffix.lower()
+    media_type = {
+        ".mp4": "video/mp4",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+    }.get(ext, "application/octet-stream")
     disposition = (
         f'inline; filename="{filename}"'
         if inline
@@ -612,7 +734,7 @@ def serve_download(username: str, filename: str, inline: bool = False):
     return FileResponse(
         path=str(file_path),
         filename=filename,
-        media_type="video/mp4",
+        media_type=media_type,
         headers={"Content-Disposition": disposition},
     )
 

@@ -511,6 +511,10 @@ function _dlRowHtml(item) {
   const cfg   = _dlStatusCfg(item.status);
   const pulse = cfg.pulse ? 'animation:pulse-dot 1s infinite;' : '';
   const url   = item.url || '';
+  // for photo posts show image progress in label
+  const displayLabel = (item.status === 'processing' && item.reason && item.reason.includes('images'))
+    ? item.reason
+    : cfg.label;
 
   let actions = '';
   if (item.status === 'waiting') {
@@ -533,7 +537,7 @@ function _dlRowHtml(item) {
       gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">
     <span style="color:${cfg.color};flex-shrink:0;${pulse}">${cfg.icon}</span>
     <span style="color:var(--text2);word-break:break-all;flex:1;font-size:10px;">${escHtml(url)}</span>
-    <span style="color:${cfg.color};flex-shrink:0;white-space:nowrap;">${cfg.label}</span>
+    <span style="color:${cfg.color};flex-shrink:0;white-space:nowrap;">${displayLabel}</span>
     ${reason}
     ${actions}
   </div>`;
@@ -851,6 +855,7 @@ async function loadDownloadsList() {
             </div>
           </div>`;
         } else {
+          const isImg = /\.(jpg|jpeg|png)$/i.test(f.filename);
           html += `<div class="rec-card${dlSelected ? ' selected' : ''}" data-dlkey="${dlFileKey}"
               onclick="dlToggleFile('${dlFileKey}', !_dlSelectedFiles['${dlFileKey}']); document.querySelector('.dl-checkbox[data-dlkey=\'${dlFileKey}\']').checked=!!_dlSelectedFiles['${dlFileKey}']; dlUpdateSectionCheckbox('${dlKey}')">
             <div class="rec-card-top">
@@ -866,7 +871,10 @@ async function loadDownloadsList() {
               <span>${new Date(f.created_at).toLocaleDateString()}</span>
             </div>
             <div class="rec-actions" onclick="event.stopPropagation()">
-              <button class="rec-btn rec-btn-play" onclick="openVideoModal('${f.username}','${f.filename}','dl')">▶ Play</button>
+              ${isImg
+                ? `<button class="rec-btn rec-btn-play" onclick="window.open('/api/tiktok/downloads/${f.username}/${encodeURIComponent(f.filename)}?inline=true','_blank')">🖼 View</button>`
+                : `<button class="rec-btn rec-btn-play" onclick="openVideoModal('${f.username}','${f.filename}','dl')">▶ Play</button>`
+              }
               <button class="rec-btn rec-btn-dl" onclick="dlSingleDownload('${f.username}','${f.filename}')">↓ Download</button>
               <button class="rec-btn rec-btn-del" onclick="dlSingleDelete('${f.username}','${f.filename}')">✕ Delete</button>
             </div>
