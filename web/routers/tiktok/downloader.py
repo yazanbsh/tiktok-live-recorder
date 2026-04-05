@@ -224,16 +224,18 @@ async def _process_photo_post(
 
     # use username from API response if available
     api_username = data.get("data", {}).get("author", {}).get("unique_id") or username
-    user_dir = DOWNLOADS_DIR / api_username
-    user_dir.mkdir(parents=True, exist_ok=True)
+    # save pics to username/pics/ subdir
+    pics_dir = DOWNLOADS_DIR / api_username / "pics"
+    pics_dir.mkdir(parents=True, exist_ok=True)
 
     total = len(images)
     filenames = []
+    downloaded_at = datetime.utcnow().isoformat()
 
     for idx, img_url in enumerate(images, start=1):
         update_fn("processing", f"downloading {idx}/{total} images")
         filename = f"{api_username}_{video_id}_{idx}.jpg"
-        dest = user_dir / filename
+        dest = pics_dir / filename
         try:
             await _download_file(img_url, dest, client)
             filenames.append(filename)
@@ -243,21 +245,22 @@ async def _process_photo_post(
             _append_dl_error(api_username, f"[{video_id}] image {idx} error: {e}")
             # clean up downloaded so far
             for f in filenames:
-                p = user_dir / f
+                p = pics_dir / f
                 if p.exists():
                     p.unlink()
             return False
 
-    # write log entry
+    # log each pic individually as POSTID_1, POSTID_2, etc.
     dl_log = _load_dl_log(api_username)
-    dl_log[video_id] = {
-        "video_id": video_id,
-        "original_url": url,
-        "filenames": filenames,
-        "count": total,
-        "type": "photo",
-        "downloaded_at": datetime.utcnow().isoformat(),
-    }
+    for idx, filename in enumerate(filenames, start=1):
+        pic_key = f"{video_id}_{idx}"
+        dl_log[pic_key] = {
+            "video_id": pic_key,
+            "original_url": url,
+            "filename": filename,
+            "type": "photo",
+            "downloaded_at": downloaded_at,
+        }
     _save_dl_log(api_username, dl_log)
 
     _queue_update_item(
@@ -694,16 +697,22 @@ def list_downloads():
     files = []
     for pattern in ("*.mp4", "*.jpg", "*.jpeg", "*.png"):
         for f in DOWNLOADS_DIR.rglob(pattern):
-            # skip log files
             if f.name.endswith("_log.json") or f.name.endswith("_errors.log"):
                 continue
             stat = f.stat()
+            # username is always the first-level subdir under DOWNLOADS_DIR
+            try:
+                rel = f.relative_to(DOWNLOADS_DIR)
+                username = rel.parts[0]
+            except Exception:
+                username = f.parent.name
             files.append(
                 {
                     "filename": f.name,
-                    "username": f.parent.name,
+                    "username": username,
                     "size_mb": round(stat.st_size / 1024 / 1024, 2),
                     "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+                    "subdir": f.parent.name if f.parent.name != username else None,
                 }
             )
     files.sort(key=lambda x: x["created_at"], reverse=True)
@@ -712,7 +721,10 @@ def list_downloads():
 
 @router.get("/api/tiktok/downloads/{username}/{filename}")
 def serve_download(username: str, filename: str, inline: bool = False):
+    # check root dir first, then pics/ subdir
     file_path = DOWNLOADS_DIR / username / filename
+    if not file_path.exists():
+        file_path = DOWNLOADS_DIR / username / "pics" / filename
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(404, "File not found")
     try:
@@ -759,6 +771,7 @@ def batch_delete_downloads(req: BatchDeleteDownloadsRequest):
                 failed.append({"file": entry, "error": "File not found"})
                 continue
             log = _load_dl_log(username)
+            # match by filename — works for both videos and individual pics
             vid = next(
                 (v for v, m in log.items() if m.get("filename") == filename), None
             )
