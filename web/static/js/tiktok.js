@@ -773,7 +773,20 @@ async function dlBatchDelete() {
   if (!keys.length) return;
   if (!confirm(`Delete ${keys.length} file${keys.length !== 1 ? 's' : ''}?`)) return;
   // keys are "dl:username/filename" — strip prefix
-  const files = keys.map(k => k.replace(/^dl:/, ''));
+  const files = keys.map(k => {
+    const raw = k.replace(/^dl:/, ''); // username/filename
+    const [username, filename] = raw.split('/');
+
+    const fileObj = _dlFiles.find(
+      f => f.username === username && f.filename === filename
+    );
+
+    if (!fileObj) return raw; // fallback (shouldn't happen)
+
+    return fileObj.subdir
+      ? `${username}/${fileObj.subdir}/${filename}`
+      : `${username}/${filename}`;
+  });
   try {
     const res = await apiFetch('/api/tiktok/downloads', {
       method: 'DELETE',

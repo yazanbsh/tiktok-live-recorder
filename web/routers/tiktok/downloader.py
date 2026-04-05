@@ -765,7 +765,10 @@ def batch_delete_downloads(req: BatchDeleteDownloadsRequest):
                 failed.append({"file": entry, "error": "Invalid path"})
                 continue
             username, filename = parts
+            # check root dir first, then pics/ subdir (same as serve_download)
             file_path = DOWNLOADS_DIR / username / filename
+            if not file_path.exists():
+                file_path = DOWNLOADS_DIR / username / "pics" / filename
             file_path.relative_to(DOWNLOADS_DIR)
             if not file_path.exists():
                 failed.append({"file": entry, "error": "File not found"})
