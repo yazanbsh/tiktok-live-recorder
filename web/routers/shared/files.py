@@ -130,13 +130,21 @@ def _generate_thumbnail(video_path: Path, thumb_path: Path) -> bool:
 
 def _thumb_endpoint(video_dir: Path, thumb_dir: Path, username: str, filename: str):
     """Shared thumbnail serve/generate logic."""
+    # for downloads: check root dir first, then pics/ subdir
     video_path = video_dir / username / filename
+    if not video_path.exists() and video_dir == DOWNLOADS_DIR:
+        video_path = video_dir / username / "pics" / filename
+
     if not video_path.exists():
         raise HTTPException(404, "Video not found")
     try:
         video_path.relative_to(video_dir)
     except ValueError:
         raise HTTPException(403, "Access denied")
+
+    # images (jpg/png) are their own thumbnail — just serve them directly
+    if video_path.suffix.lower() in (".jpg", ".jpeg", ".png"):
+        return FileResponse(path=str(video_path), media_type="image/jpeg")
 
     thumb_name = Path(filename).stem + ".jpg"
     thumb_path = thumb_dir / username / thumb_name
