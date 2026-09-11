@@ -92,6 +92,7 @@ class StoppableTikTokRecorder(TikTokRecorder):
             raise LiveNotFound(TikTokError.RETRIEVE_LIVE_URL)
 
         output = self._build_output_path(user)
+        Path(output).parent.mkdir(parents=True, exist_ok=True)
         logger.info("Started recording (web-stoppable)...")
 
         buffer_size = 512 * 1024
