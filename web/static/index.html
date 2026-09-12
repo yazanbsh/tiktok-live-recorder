@@ -25,9 +25,6 @@
       <div class="nav-item" onclick="showPanel('recordings')">
         <span class="nav-icon">▣</span> TK Recordings
       </div>
-      <div class="nav-item" onclick="showPanel('yt-recordings')">
-        <span class="nav-icon">▶</span> YT Recordings
-      </div>
       <div class="nav-item" onclick="showPanel('downloader')">
         <span class="nav-icon">↓</span> Downloader
       </div>
@@ -108,56 +105,6 @@
           </div>
         </div>
 
-        <!-- YouTube Section -->
-        <div>
-          <div class="section-header" style="margin-bottom:14px;">
-            <span class="section-title" style="color:#ff4444;">▶ YouTube</span>
-            <button class="btn btn-primary" style="padding:6px 14px;font-size:10px;background:#ff4444;" onclick="openAddYTModal()">+ Add Channel</button>
-          </div>
-
-          <div class="stats-row" style="margin-bottom:18px;">
-            <div class="stat-card red">
-              <div class="stat-label">Monitored</div>
-              <div class="stat-value" id="yt-stat-total">—</div>
-            </div>
-            <div class="stat-card red">
-              <div class="stat-label">Recording</div>
-              <div class="stat-value" id="yt-stat-recording">—</div>
-            </div>
-            <div class="stat-card green">
-              <div class="stat-label">Saved Clips</div>
-              <div class="stat-value" id="yt-stat-clips">—</div>
-            </div>
-            <div class="stat-card blue">
-              <div class="stat-label">Disk Used</div>
-              <div class="stat-value" id="yt-stat-disk">—</div>
-            </div>
-          </div>
-
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Channel</th>
-                  <th>Status</th>
-                  <th>Interval</th>
-                  <th>YT Live</th>
-                  <th>Last Seen Live</th>
-                  <th>Recordings</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="yt-watchlist-tbody">
-                <tr><td colspan="7">
-                  <div class="empty-state">
-                    <div class="empty-icon">▶</div>
-                    <div class="empty-text">No YouTube channels monitored yet.</div>
-                  </div>
-                </td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
 
       </div>
 
@@ -188,20 +135,6 @@
     <button class="btn" style="background:rgba(255,45,85,0.15);color:var(--accent);border:1px solid rgba(255,45,85,0.3);" onclick="batchDelete()">✕ Delete</button>
     <button class="action-btn" onclick="clearSelection()" style="margin-left:4px;">✕ Clear</button>
   </div>
-
-      <!-- ── YT RECORDINGS PANEL ── -->
-      <div class="panel" id="panel-yt-recordings">
-        <div class="section-header">
-          <span class="section-title">YouTube Recordings</span>
-          <button class="refresh-btn" onclick="loadYTRecordings()" title="Refresh">↻</button>
-        </div>
-        <div class="rec-grid" id="yt-rec-grid">
-          <div class="empty-state">
-            <div class="empty-icon">▶</div>
-            <div class="empty-text">No YouTube recordings yet.</div>
-          </div>
-        </div>
-      </div>
 
       <!-- ── DOWNLOADER PANEL ── -->
       <div class="panel" id="panel-downloader">
@@ -370,48 +303,6 @@
   </div>
 </div>
 
-<!-- ADD YOUTUBE CHANNEL MODAL -->
-<div class="modal-backdrop" id="yt-add-modal">
-  <div class="modal">
-    <div class="modal-title" style="color:#ff4444;">▶ Add YouTube Channel</div>
-
-    <div class="form-group">
-      <label>Channel Handle or ID</label>
-      <input type="text" id="yt-f-username" placeholder="@channelname or UCxxxxxxx" autocomplete="off" />
-      <div class="form-hint">Use @handle or full channel ID starting with UC</div>
-    </div>
-
-    <div class="form-row">
-      <div class="form-group">
-        <label>Check Interval (min)</label>
-        <input type="number" id="yt-f-interval" value="5" min="1" />
-      </div>
-      <div class="form-group">
-        <label>File Prefix <span style="color:var(--muted);font-size:9px;">(optional)</span></label>
-        <input type="text" id="yt-f-prefix" placeholder="e.g. channelname" />
-        <div class="form-hint">Used in output filename, defaults to channel name</div>
-      </div>
-    </div>
-
-    <div class="form-group" style="margin-top:4px;">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:12px;">
-        <input type="checkbox" id="yt-f-record" checked style="width:15px;height:15px;accent-color:#ff4444;flex-shrink:0;">
-        Record when live
-      </label>
-      <div class="form-hint">When unchecked, channel is monitored but not recorded</div>
-    </div>
-
-    <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="closeAddYTModal()">Cancel</button>
-      <button class="btn btn-primary" style="background:#ff4444;" onclick="submitAddYTUser()">Add Channel</button>
-    </div>
-  </div>
-</div>
-
-<!-- EDIT YOUTUBE CHANNEL MODAL -->
-<div class="modal-backdrop" id="yt-edit-modal">
-  <div class="modal">
-    <div class="modal-title" style="color:#ff4444;">✎ Edit YouTube Channel</div>
 
     <div class="form-group">
       <label>Channel</label>
@@ -537,7 +428,6 @@
 </div>
 
 <script src="https://cdn.plyr.io/3.8.3/plyr.js"></script>
-<script src="/static/js/youtube.js"></script>
 <script src="/static/js/tiktok.js"></script>
 <script src="/static/js/core.js"></script>
 </body>

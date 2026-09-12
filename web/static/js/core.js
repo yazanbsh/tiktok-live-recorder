@@ -11,7 +11,6 @@ function showPanel(name) {
   const titles = {
     watchlist:      'Watchlist',
     recordings:     'TK Recordings',
-    'yt-recordings':'YT Recordings',
     downloader:     'Downloader',
     downloads:      'Downloads',
     logs:           'System Log',
@@ -19,7 +18,6 @@ function showPanel(name) {
   document.getElementById('page-title').textContent = titles[name] || name;
 
   if (name === 'recordings')      loadRecordings();
-  if (name === 'yt-recordings')   loadYTRecordings();
   if (name === 'downloads')       loadDownloadsList();
   if (name === 'logs')            { loadLogs(); loadTikTokLogs(); }
 }
@@ -27,8 +25,6 @@ function showPanel(name) {
 function refreshAll() {
   loadWatchlist();
   loadStats();
-  loadYTWatchlist();
-  loadYTStats();
 }
 
 // ── API helpers ───────────────────────────────────────────────────────────────
@@ -155,7 +151,7 @@ function _buildFileCard(f, key, thumbUrl, playType, sectionKey, onSelect, onDown
 let _plyrInstance = null;
 
 function openVideoModal(username, filename, type = 'rec') {
-  const baseMap = { rec: '/api/recordings', dl: '/api/tiktok/downloads', yt: '/api/yt/recordings' };
+  const baseMap = { rec: '/api/recordings', dl: '/api/tiktok/downloads' };
   const base = baseMap[type] || '/api/recordings';
   const src  = `${base}/${encodeURIComponent(username)}/${encodeURIComponent(filename)}?inline=true`;
 
@@ -198,10 +194,7 @@ document.addEventListener('keydown', e => {
 // ── Init + auto-refresh ───────────────────────────────────────────────────────
 loadWatchlist();
 loadStats();
-loadYTWatchlist();
-loadYTStats();
 pollLiveStatus();
-pollYTLiveStatus();
 
 // refresh watchlist every 15s when on watchlist panel
 setInterval(() => {
@@ -209,8 +202,6 @@ setInterval(() => {
   if (active && active.id === 'panel-watchlist') {
     loadWatchlist();
     loadStats();
-    loadYTWatchlist();
-    loadYTStats();
   }
 }, 15000);
 
@@ -219,6 +210,5 @@ setInterval(() => {
   const active = document.querySelector('.panel.active');
   if (active && active.id === 'panel-watchlist') {
     pollLiveStatus();
-    pollYTLiveStatus();
   }
 }, 60000);

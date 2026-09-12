@@ -16,9 +16,7 @@ BASE_DIR = Path(__file__).parent.parent.parent  # web/
 DATA_DIR = Path(os.environ.get("DATA_DIR", str(BASE_DIR.parent / "data")))
 STATIC_DIR = BASE_DIR / "static"
 WATCHLIST_FILE = DATA_DIR / "watchlist.json"
-YT_WATCHLIST_FILE = DATA_DIR / "yt_watchlist.json"
 RECORDINGS_DIR = DATA_DIR / "recordings"
-YT_RECORDINGS_DIR = DATA_DIR / "yt_recordings"
 DOWNLOADS_DIR = DATA_DIR / "downloads"
 QUEUE_FILE = DATA_DIR / "queue.json"
 LOG_FILE = DATA_DIR / "logs" / "tiktok-recorder.log"
@@ -35,16 +33,13 @@ TIKWM_RESULT = "https://www.tikwm.com/api/video/task/result"
 # ── thumbnail paths ──────────────────────────────────────────────────────────
 THUMBNAILS_DIR = DATA_DIR / "thumbnails"
 THUMB_RECORDINGS_DIR = THUMBNAILS_DIR / "recordings"
-THUMB_YT_RECORDINGS_DIR = THUMBNAILS_DIR / "yt_recordings"
 THUMB_DOWNLOADS_DIR = THUMBNAILS_DIR / "downloads"
 
 # ensure dirs exist
 for _d in (
     RECORDINGS_DIR,
-    YT_RECORDINGS_DIR,
     DOWNLOADS_DIR,
     THUMB_RECORDINGS_DIR,
-    THUMB_YT_RECORDINGS_DIR,
     THUMB_DOWNLOADS_DIR,
     DATA_DIR / "logs",
 ):

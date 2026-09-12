@@ -17,9 +17,7 @@ from .config import (
     LOG_FILE,
     DATA_DIR,
     THUMB_RECORDINGS_DIR,
-    THUMB_YT_RECORDINGS_DIR,
     THUMB_DOWNLOADS_DIR,
-    YT_RECORDINGS_DIR,
     DOWNLOADS_DIR,
 )
 
@@ -159,13 +157,6 @@ def _thumb_endpoint(video_dir: Path, thumb_dir: Path, username: str, filename: s
 @router.get("/api/recordings/{username}/{filename}/thumbnail")
 def recording_thumbnail(username: str, filename: str):
     return _thumb_endpoint(RECORDINGS_DIR, THUMB_RECORDINGS_DIR, username, filename)
-
-
-@router.get("/api/yt/recordings/{username}/{filename}/thumbnail")
-def yt_recording_thumbnail(username: str, filename: str):
-    return _thumb_endpoint(
-        YT_RECORDINGS_DIR, THUMB_YT_RECORDINGS_DIR, username, filename
-    )
 
 
 @router.get("/api/tiktok/downloads/{username}/{filename}/thumbnail")
