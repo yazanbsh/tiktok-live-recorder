@@ -101,27 +101,26 @@ def batch_delete_recordings(req: BatchDeleteRecordingsRequest):
 
 
 def _generate_thumbnail(video_path: Path, thumb_path: Path) -> bool:
-    """Generate a thumbnail at 5s from video using ffmpeg. Returns True on success."""
+    """Generate a thumbnail using ffmpeg. Tries at 5s, 1s, then first frame."""
     try:
         thumb_path.parent.mkdir(parents=True, exist_ok=True)
-        result = subprocess.run(
-            [
-                "ffmpeg",
-                "-y",
-                "-i",
-                str(video_path),
-                "-ss",
-                "00:00:05",
-                "-vframes",
-                "1",
-                "-vf",
-                "scale=320:-1",
-                str(thumb_path),
-            ],
-            capture_output=True,
-            timeout=30,
-        )
-        return result.returncode == 0 and thumb_path.exists()
+        for seek in ("00:00:05", "00:00:01", "00:00:00"):
+            result = subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-ss", seek,
+                    "-i", str(video_path),
+                    "-vframes", "1",
+                    "-vf", "scale=320:-1",
+                    str(thumb_path),
+                ],
+                capture_output=True,
+                timeout=30,
+            )
+            if result.returncode == 0 and thumb_path.exists():
+                return True
+        return False
     except Exception:
         return False
 
