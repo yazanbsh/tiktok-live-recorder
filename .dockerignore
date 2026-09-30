@@ -1,0 +1,39 @@
+# Git
+.git/
+.gitignore
+
+# CI / GitHub
+.github/
+
+# Docs
+docs/
+README.md
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+LICENSE
+
+# Tests
+tests/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.so
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Dev / editor
+.vscode/
+.idea/
+*.env
+.env*
+
+# Local data volume (never bake into image)
+data/
